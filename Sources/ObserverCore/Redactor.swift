@@ -1,9 +1,9 @@
 import Foundation
 
-struct Redactor {
+public struct Redactor {
     private let patterns: [(NSRegularExpression, String)]
 
-    init() {
+    public init() {
         let raw: [(String, String)] = [
             (#"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"#, "[EMAIL]"),
             (#"\b(?:\d[ -]*?){13,16}\b"#, "[CARD]"),
@@ -20,7 +20,7 @@ struct Redactor {
         }
     }
 
-    func redact(_ text: String) -> String {
+    public func redact(_ text: String) -> String {
         var result = text
         for (re, repl) in patterns {
             let range = NSRange(result.startIndex..., in: result)

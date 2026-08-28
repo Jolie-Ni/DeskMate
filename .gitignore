@@ -14,3 +14,16 @@ DerivedData/
 # Editor
 .vscode/
 .idea/
+
+# External test corpora — large, re-downloadable, never committed
+TestData/
+
+# Hub development environment — recreated by `server/devdb.sh` + `pip install`
+server/.venv/
+# Secrets. Nothing matching these ever gets committed — the production database
+# password and the admin link signing key live here.
+.env
+.env.*
+!.env.example
+server/.env*.local
+server/__pycache__/

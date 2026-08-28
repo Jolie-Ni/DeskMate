@@ -1,0 +1,5 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+psycopg[binary]>=3.2
+python-multipart>=0.0.9   # FastAPI Form() parsing for the sign-in page

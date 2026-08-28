@@ -1,9 +1,15 @@
 import CoreGraphics
 import Vision
 
-final class OCR {
+/// Lives in Core rather than the daemon so the capture pipeline has exactly one
+/// implementation. A fixture builder that reimplemented this would drift from
+/// production and quietly stop testing it.
+public final class OCR {
+
+    public init() {}
+
     /// Run on-device OCR via the Vision framework. Free, fast, no network.
-    func recognize(image: CGImage) -> String {
+    public func recognize(image: CGImage) -> String {
         var output = ""
         let request = VNRecognizeTextRequest { request, _ in
             guard let observations = request.results as? [VNRecognizedTextObservation] else {

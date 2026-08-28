@@ -1,0 +1,228 @@
+{
+  "note": "Hand-curated, not scraped. `version`, `doc` and `what` are facts taken from Anthropic's docs; `use_when` and `costs` are judgement about when a capability is the right answer for an observed procedure — which the docs do not state and an extractor could not infer. Re-verify by diffing the dated version strings on the tool reference page; a changed suffix means re-read that one page.",
+  "verified_at": "2026-08-27",
+  "source_index": "https://platform.claude.com/llms.txt",
+  "version_check": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-reference",
+  "capabilities": [
+    {
+      "id": "computer_use",
+      "name": "Computer use",
+      "tier": "primitive",
+      "version": "computer_toolset_20260801",
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool",
+      "what": "Claude controls a desktop by taking screenshots and issuing mouse and keyboard actions. Your application executes every call.",
+      "use_when": "The app has no API and no scriptable interface, and the procedure is visual. This is the last resort that makes an otherwise unautomatable app reachable.",
+      "costs": "Slow, expensive per step, and brittle against UI changes. Needs a machine or VM left running. Treat as supervised, not unattended."
+    },
+    {
+      "id": "browser_use",
+      "name": "Browser use",
+      "tier": "primitive",
+      "version": "browser_toolset_20260801",
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/browser-use-tool",
+      "what": "A browser-scoped toolset — navigation, clicking, typing, screenshots — that your application executes.",
+      "use_when": "The procedure lives entirely in a web app with no usable API. Narrower and more reliable than full computer use when the work is in a browser.",
+      "costs": "Breaks when the site's markup changes. Sites' terms often prohibit automated access — check before recommending it."
+    },
+    {
+      "id": "code_execution",
+      "name": "Code execution",
+      "tier": "primitive",
+      "version": "code_execution_20260521",
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool",
+      "what": "Runs Python and Bash in an Anthropic-hosted sandbox, with file operations. Later versions allow calling your own tools from inside the sandbox.",
+      "use_when": "The procedure involves transforming data — reshaping a spreadsheet, computing statistics, converting formats — rather than clicking a UI.",
+      "costs": "Sandboxed: no access to the user's local files or network services unless you pass data in. Per-cell time limit."
+    },
+    {
+      "id": "web_search",
+      "name": "Web search",
+      "tier": "primitive",
+      "version": "web_search_20260318",
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool",
+      "what": "Server-side search run on Anthropic's infrastructure. No server to host.",
+      "use_when": "A step in the procedure is 'look something up'. Replaces a manual search-and-skim.",
+      "costs": "Non-deterministic — results differ between runs, which breaks reproducibility if the output feeds a fixture or a test."
+    },
+    {
+      "id": "web_fetch",
+      "name": "Web fetch",
+      "tier": "primitive",
+      "version": "web_fetch_20260318",
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool",
+      "what": "Server-side retrieval of a known URL, with a cache-bypass option in later versions.",
+      "use_when": "The procedure repeatedly opens the same page to read a value. Cheaper and more predictable than search when the URL is known.",
+      "costs": "Fails on pages behind auth or rendered entirely client-side."
+    },
+    {
+      "id": "memory",
+      "name": "Memory tool",
+      "tier": "primitive",
+      "version": "memory_20250818",
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool",
+      "what": "Client-executed tool for persisting notes across sessions.",
+      "use_when": "The procedure's cost is re-establishing context each time — re-explaining a project, re-pasting the same background.",
+      "costs": "You own the storage and its privacy. Stale memories mislead as confidently as fresh ones."
+    },
+    {
+      "id": "bash_tool",
+      "name": "Bash tool",
+      "tier": "primitive",
+      "version": "bash_20250124",
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/bash-tool",
+      "what": "Anthropic-defined schema for shell command execution; your application runs the commands.",
+      "use_when": "The procedure is already something a shell could do — file moves, conversions, git operations.",
+      "costs": "Runs with the caller's privileges. Needs a real sandbox or an allowlist before it is safe to run unattended."
+    },
+    {
+      "id": "text_editor",
+      "name": "Text editor tool",
+      "tier": "primitive",
+      "version": "text_editor_20250728",
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool",
+      "what": "Structured view/create/replace operations over files, executed by your application.",
+      "use_when": "The procedure edits files in place and you want targeted changes rather than whole-file rewrites.",
+      "costs": "Only as safe as the paths you allow it to touch."
+    },
+    {
+      "id": "mcp_connector",
+      "name": "MCP connector",
+      "tier": "primitive",
+      "version": "mcp_toolset",
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/mcp-connector",
+      "what": "Connect MCP servers directly from the Messages API, server-side. Versioned by beta header rather than a dated type.",
+      "use_when": "An MCP server already exists for the app in the procedure. Cheaper than writing an integration.",
+      "costs": "Community servers vary in quality and are a supply-chain dependency. Auth and scopes are yours to manage."
+    },
+    {
+      "id": "tool_search",
+      "name": "Tool search",
+      "tier": "primitive",
+      "version": "tool_search_tool_regex_20251119",
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool",
+      "what": "Discovers deferred tools on demand so they stay out of the initial prompt. Regex and BM25 variants.",
+      "use_when": "A design needs many tools. Deferred definitions do not invalidate the prompt cache.",
+      "costs": "Adds a discovery round-trip. Irrelevant for small tool sets."
+    },
+    {
+      "id": "advisor",
+      "name": "Advisor tool",
+      "tier": "primitive",
+      "version": "advisor_20260301",
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool",
+      "what": "UNVERIFIED — listed in the tool reference as a server tool behind the `advisor-tool-2026-03-01` beta header. Its purpose has not been read.",
+      "use_when": "Do not recommend until someone has read the doc. Listed here so the gap is visible rather than silently missing.",
+      "costs": "Unknown."
+    },
+    {
+      "id": "structured_outputs",
+      "name": "Structured outputs",
+      "tier": "build",
+      "version": null,
+      "doc": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+      "what": "Constrains a response to a JSON schema.",
+      "use_when": "The automation's output feeds another system rather than a person. Turns 'parse the prose' into a typed value.",
+      "costs": "A schema that mirrors its own field names invites the model to copy them into the data — validate what comes back."
+    },
+    {
+      "id": "prompt_caching",
+      "name": "Prompt caching",
+      "tier": "build",
+      "version": null,
+      "doc": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+      "what": "Caches a stable prompt prefix across calls.",
+      "use_when": "A recurring automation sends the same large context every run — a catalog, a rulebook, a long system prompt.",
+      "costs": "Only helps if the prefix is genuinely stable; a changing preamble invalidates it every call."
+    },
+    {
+      "id": "batch_processing",
+      "name": "Batch processing",
+      "tier": "build",
+      "version": null,
+      "doc": "https://platform.claude.com/docs/en/build-with-claude/batch-processing",
+      "what": "Submit many requests asynchronously at reduced cost.",
+      "use_when": "The procedure processes a queue and nobody is waiting — overnight triage, bulk labelling.",
+      "costs": "Not interactive. Wrong choice if the person is waiting for the answer."
+    },
+    {
+      "id": "files_api",
+      "name": "Files API",
+      "tier": "build",
+      "version": null,
+      "doc": "https://platform.claude.com/docs/en/build-with-claude/files",
+      "what": "Upload files once and reference them across requests.",
+      "use_when": "The same document is re-attached on every run of a procedure.",
+      "costs": "Another store of the user's data to manage and expire."
+    },
+    {
+      "id": "citations",
+      "name": "Citations",
+      "tier": "build",
+      "version": null,
+      "doc": "https://platform.claude.com/docs/en/build-with-claude/citations",
+      "what": "Responses carry references back to source passages.",
+      "use_when": "The automation's output must be checkable — a summary someone will act on, or anything client-facing.",
+      "costs": "Only as good as the sources supplied."
+    },
+    {
+      "id": "agent_skills",
+      "name": "Agent Skills",
+      "tier": "surface",
+      "version": null,
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview",
+      "what": "Packaged instructions and assets Claude loads when a task matches.",
+      "use_when": "The procedure is knowledge-shaped rather than mechanical — a house style, a checklist, a way of doing something. Often the right answer when a person insists their process is 'just how I do it'.",
+      "costs": "Does not execute anything by itself. Solves 'how', not 'when'."
+    },
+    {
+      "id": "managed_agents",
+      "name": "Managed Agents",
+      "tier": "surface",
+      "version": null,
+      "doc": "https://platform.claude.com/docs/en/managed-agents/overview",
+      "what": "Anthropic-hosted agents with a managed sandbox, scheduling, file handling and webhooks.",
+      "use_when": "The procedure should run without the user present — on a schedule or a trigger — and you do not want to operate infrastructure.",
+      "costs": "Runs in Anthropic's cloud, so anything touching local files or a private network needs a different shape."
+    },
+    {
+      "id": "remote_mcp_servers",
+      "name": "Remote MCP servers",
+      "tier": "surface",
+      "version": null,
+      "doc": "https://platform.claude.com/docs/en/agents-and-tools/remote-mcp-servers",
+      "what": "Hosted MCP servers Claude can reach without local setup.",
+      "use_when": "A remote server already covers the app in the procedure.",
+      "costs": "A third party sits between Claude and the data. Check what it can see."
+    },
+    {
+      "id": "cli_scripting",
+      "name": "CLI scripting and automation",
+      "tier": "surface",
+      "version": null,
+      "doc": "https://platform.claude.com/docs/en/cli-sdks-libraries/cli/scripting",
+      "what": "Driving Claude from the shell, scriptable and pipeable.",
+      "use_when": "The user already lives in a terminal and the procedure is developer-shaped. Often the lowest-friction option for someone comfortable there.",
+      "costs": "Local only. Nothing runs when the machine is asleep."
+    },
+    {
+      "id": "connectors",
+      "name": "Claude connectors",
+      "tier": "surface",
+      "version": null,
+      "doc": "https://claude.com/connectors",
+      "what": "Prebuilt MCP integrations enabled from Claude's settings. The live list is cached separately in connectors.json and refreshed weekly.",
+      "use_when": "The app already has a connector — check the cached catalog rather than guessing.",
+      "costs": "Existing is not the same as enabled. The user must turn it on and grant scopes."
+    },
+    {
+      "id": "no_automation",
+      "name": "Leave it alone",
+      "tier": "judgement",
+      "version": null,
+      "doc": null,
+      "what": "Not every repeated procedure should be automated.",
+      "use_when": "The work is mostly judgement — choosing wording, deciding what matters, reading a room. Or it runs rarely enough that the build cost exceeds the saving. A template, a snippet, or a keyboard shortcut is often the honest recommendation.",
+      "costs": "None. This is the answer that gets under-recommended because it is the one nobody is selling."
+    }
+  ]
+}

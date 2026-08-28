@@ -33,7 +33,7 @@ public struct DashboardStats {
             let allRows = try Row.fetchAll(db, sql: """
                 SELECT appName, url
                 FROM captures
-                WHERE ts >= ? AND excluded = 0
+                WHERE ts >= ?
             """, arguments: [since])
 
             var counts: [String: (label: String, isURL: Bool, n: Int)] = [:]
@@ -66,7 +66,7 @@ public struct DashboardStats {
     public func totalCaptures(since: Date) throws -> Int {
         try storage.dbQueue.read { db in
             try Int.fetchOne(db, sql: """
-                SELECT COUNT(*) FROM captures WHERE ts >= ? AND excluded = 0
+                SELECT COUNT(*) FROM captures WHERE ts >= ?
             """, arguments: [since]) ?? 0
         }
     }
@@ -80,12 +80,11 @@ public struct DashboardStats {
         }
     }
 
+    /// Delegates rather than re-querying: soft-deleted workflows must be
+    /// filtered the same way here as they are when deciding what to suggest,
+    /// and two copies of that rule would eventually disagree.
     public func workflows() throws -> [Workflow] {
-        try storage.dbQueue.read { db in
-            try Workflow
-                .order(Column("createdAt").desc)
-                .fetchAll(db)
-        }
+        try storage.activeWorkflows()
     }
 
     private static func extractHost(_ rawURL: String) -> String? {

@@ -10,7 +10,6 @@ public struct Capture: Codable, FetchableRecord, MutablePersistableRecord {
     public var screenshotPath: String?
     public var ocrText: String?
     public var isRedacted: Bool
-    public var excluded: Bool
 
     public static let databaseTableName = "captures"
 
@@ -22,8 +21,7 @@ public struct Capture: Codable, FetchableRecord, MutablePersistableRecord {
         url: String?,
         screenshotPath: String?,
         ocrText: String?,
-        isRedacted: Bool,
-        excluded: Bool
+        isRedacted: Bool
     ) {
         self.id = id
         self.ts = ts
@@ -33,7 +31,6 @@ public struct Capture: Codable, FetchableRecord, MutablePersistableRecord {
         self.screenshotPath = screenshotPath
         self.ocrText = ocrText
         self.isRedacted = isRedacted
-        self.excluded = excluded
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) {

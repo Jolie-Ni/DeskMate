@@ -7,6 +7,7 @@ final class CaptureCoordinator {
     private let ocr = OCR()
     private let redactor = Redactor()
     private var lastPurgeDate: Date = .distantPast
+    private var status = DaemonStatus(pid: ProcessInfo.processInfo.processIdentifier, startedAt: Date())
 
     init() {
         try? FileManager.default.createDirectory(
@@ -25,6 +26,12 @@ final class CaptureCoordinator {
     /// way a slow tick delays the next one instead of overlapping with it. The
     /// first sample fires immediately — the sleep is at the end.
     func start() {
+        status = DaemonStatus(
+            pid: ProcessInfo.processInfo.processIdentifier,
+            startedAt: Date()
+        )
+        DaemonControl.publish(status)
+
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.tick()
@@ -36,6 +43,9 @@ final class CaptureCoordinator {
     func stop() {
         loop?.cancel()
         loop = nil
+        // Clear on the way out so the dashboard doesn't have to wait for a
+        // liveness probe to notice we're gone.
+        DaemonControl.clearStatus()
     }
 
     /// Main-actor bound: the frontmost-app lookup (`NSWorkspace`) and the
@@ -79,12 +89,13 @@ final class CaptureCoordinator {
             url: url,
             screenshotPath: screenshotPath?.path,
             ocrText: redactedOCR,
-            isRedacted: isRedacted,
-            excluded: false
+            isRedacted: isRedacted
         )
 
         do {
             try storage.insert(capture: capture)
+            status.lastCaptureAt = Date()
+            DaemonControl.publish(status)
             let preview = (windowTitle ?? "—").prefix(60)
             let urlPreview = url.map { "  \($0)" } ?? ""
             print("[observer] \(appName) | \(preview)\(urlPreview)")
