@@ -86,14 +86,14 @@ ObserverDashboard  ──►  cluster into sessions  ──►  Claude API  ─�
 
 **Analysis** (`ObserverAnalyzer`) — runs only when you click *Analyze* in the dashboard. Captures from the last 7 days are clustered locally into sessions (same app/host, gaps under 5 minutes, sessions shorter than 60s dropped). Session digests go to Claude in two passes: Haiku labels each session in batches of 12, then Opus reads the labeled timeline and proposes workflows.
 
-**Dashboard** (`ObserverDashboard`) — four tabs. *Today* shows where your time went, *Workflows* holds the procedures you kept, *Suggestions* lists what Claude proposed (keep or dismiss), *Team* joins a shared hub and shows which workflows you have shared to it.
+**Dashboard** (`ObserverDashboard`) — four tabs. *Today* shows where your time went, *Workflows* holds the procedures you kept, *Suggestions* lists what Claude proposed (keep or dismiss), *Team* joins a shared hub and shows which workflows you have shared to it, and *Settings* switches off anything the app does on its own.
 
 ## Privacy
 
 This tool sees everything on your screen, so the defaults are deliberately conservative:
 
 - **Screenshots never leave the machine.** Only text digests — app name, URL host and paths, window titles, and a ~200 character redacted OCR snippet per session — are sent to the Claude API.
-- **Analysis is manual.** The daemon never calls out to the network. Nothing is sent until you click *Analyze*.
+- **Analysis is manual** — except the nightly summary, if you enable it. The daemon never calls out to the network. Nothing is sent until you click *Analyze*, or until the scheduled summary runs (see Daily summary below), which sends a sample of screen text to Claude every night and writes the result to Google Drive.
 - **Apps are excluded by bundle ID** — 1Password, Keychain Access, and the login window are skipped entirely (`Sources/ObserverCore/Config.swift`).
 - **URLs are excluded by host fragment** — anything containing `bank`, `chase.com`, `wellsfargo.com`, or `1password.com` is dropped before capture.
 - **OCR text is redacted** before it's written to disk: emails, card numbers, SSNs, `password:`/`api_key:` lines, `sk-` keys, and long hex tokens.
@@ -107,6 +107,58 @@ To wipe everything:
 rm -rf ~/Library/Application\ Support/LocalObserver
 ```
 
+## Daily summary
+
+An optional nightly job writes an activity file for a newsletter, a journal, or
+anything else that wants context about the week.
+
+```sh
+swift build -c release
+cp scripts/com.hconsult.localobserver.summary.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.hconsult.localobserver.summary.plist
+```
+
+It runs at 23:59 and writes
+`<Google Drive>/My Drive/top_of_your_mind/activity/YYYY-MM-DD-activity.md`,
+one file per day, each holding three windows: the day itself, the last 7 days
+and the last 30 days. Every window gets an hours-and-apps breakdown computed
+locally, plus a few paragraphs of prose written by Claude from the screen text
+of that window.
+
+**This sends data off the machine, on a schedule, without you pressing
+anything.** A sample of OCR text goes to the Claude API each night, and the
+resulting summary syncs to Google Drive, where it is as private as that Drive
+folder is. The summaries name real projects, documents and people, because a
+vague one would be useless. If that is not what you want, do not load the job —
+nothing else in the app behaves this way.
+
+The prose needs an API key, which launchd will not inherit from your shell:
+
+```sh
+printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" \
+  > ~/Library/Application\ Support/LocalObserver/summary.env
+chmod 600 ~/Library/Application\ Support/LocalObserver/summary.env
+```
+
+Without it the job still runs and still writes the file, minus the prose.
+
+**Turning it off.** The *Settings* tab has a switch for it. That writes
+`settings.json` next to the database, which the summary binary reads before it
+does anything — a file rather than `UserDefaults`, because defaults are scoped
+per executable and the dashboard and the summary are separate binaries. The
+scheduled job still fires and exits without writing; `launchctl unload` removes
+it entirely.
+
+Run it by hand any time with `./scripts/daily-summary.sh`, override the
+destination with `--dir`, skip the model call with `--no-narrative`, and ignore
+the off switch with `--force`.
+Output goes to `~/Library/Logs/local-observer-summary.log`.
+
+If the Mac is asleep at 23:59, launchd runs the job on wake rather than skipping
+the day, and the job notices it is late: past midday it summarises the current
+day, before midday it summarises the day before. The file is named for the day
+it describes, not the moment it ran.
+
 ## Layout
 
 | Target | What's in it |
@@ -114,8 +166,9 @@ rm -rf ~/Library/Application\ Support/LocalObserver
 | `ObserverCore` | `Config` (intervals, paths, exclusions), GRDB `Storage` + migrations, `Capture` / `Workflow` models, Vision OCR, redaction, daemon control, team account and hub client |
 | `ObserverDaemon` | capture loop, screenshot, idle detection, browser URL, permission check |
 | `ObserverAnalyzer` | session clustering, Anthropic Messages API client, Haiku labeling, Opus pattern detection, automation planning |
-| `ObserverDashboard` | SwiftUI app — Today, Workflows, Suggestions, Team |
+| `ObserverDashboard` | SwiftUI app — Today, Workflows, Suggestions, Team, Settings |
 | `ObserverFixture` | test harness: fixture runs, comparator checks, sharing checks, hub round trips |
+| `ObserverSummary` | the nightly activity summary that the launchd job runs |
 | `server/` | the team hub — FastAPI over Postgres, deployed separately ([its own README](server/README.md)) |
 
 ## Configuration

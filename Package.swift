@@ -30,6 +30,13 @@ let package = Package(
             name: "ObserverFixture",
             dependencies: ["ObserverCore", "ObserverAnalyzer"]
         ),
+        // What the daily cron runs. Its own binary rather than a flag on the
+        // fixture harness: a job that runs unattended every night should not
+        // share a process with test tooling.
+        .executableTarget(
+            name: "ObserverSummary",
+            dependencies: ["ObserverCore", "ObserverAnalyzer"]
+        ),
         .executableTarget(
             name: "ObserverDashboard",
             dependencies: ["ObserverCore", "ObserverAnalyzer"]

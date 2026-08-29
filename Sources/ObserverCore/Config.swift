@@ -39,6 +39,32 @@ public enum Config {
             .appendingPathComponent("LocalObserver", isDirectory: true)
     }()
 
+    /// Where the nightly summary lands: a folder inside Google Drive's synced
+    /// mount, so the file reaches the cloud without this machine holding any
+    /// Google credential. Falls back to local storage when Drive is not
+    /// installed, because a job that writes nowhere is worse than one that
+    /// writes somewhere findable.
+    public static var defaultSummaryDirectory: URL {
+        if let override = ProcessInfo.processInfo.environment["OBSERVER_SUMMARY_DIR"],
+           !override.isEmpty {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
+        let cloud = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/CloudStorage", isDirectory: true)
+        let drive = (try? FileManager.default.contentsOfDirectory(atPath: cloud.path))?
+            .first { $0.hasPrefix("GoogleDrive-") }
+        if let drive {
+            let myDrive = cloud.appendingPathComponent(drive, isDirectory: true)
+                .appendingPathComponent("My Drive", isDirectory: true)
+            if FileManager.default.fileExists(atPath: myDrive.path) {
+                return myDrive
+                    .appendingPathComponent("top_of_your_mind", isDirectory: true)
+                    .appendingPathComponent("activity", isDirectory: true)
+            }
+        }
+        return storageDir.appendingPathComponent("summaries", isDirectory: true)
+    }
+
     public static let screenshotsDir: URL =
         storageDir.appendingPathComponent("screenshots", isDirectory: true)
 

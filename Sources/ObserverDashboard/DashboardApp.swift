@@ -388,7 +388,10 @@ struct ContentView: View {
                         options: DashboardSection.allCases.map(\.title),
                         selection: $model.sectionIndex
                     )
-                    .frame(maxWidth: 380)
+                    // Derived, not fixed: segments split the width evenly, so a
+                    // hard cap silently truncates the longest label the moment a
+                    // tab is added. 94pt fits "Suggestions" at 12pt semibold.
+                    .frame(maxWidth: CGFloat(DashboardSection.allCases.count) * 94)
                     Spacer(minLength: 0)
                 }
 
@@ -398,6 +401,7 @@ struct ContentView: View {
                     case .workflows:   WorkflowsView()
                     case .suggestions: SuggestionsView()
                     case .team:        TeamView()
+                    case .settings:    SettingsView()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -431,7 +435,7 @@ struct ContentView: View {
 }
 
 enum DashboardSection: Int, CaseIterable, Identifiable {
-    case today, workflows, suggestions, team
+    case today, workflows, suggestions, team, settings
     var id: Int { rawValue }
 
     var title: String {
@@ -440,6 +444,7 @@ enum DashboardSection: Int, CaseIterable, Identifiable {
         case .workflows:   return "Workflows"
         case .suggestions: return "Suggestions"
         case .team:        return "Team"
+        case .settings:    return "Settings"
         }
     }
 
@@ -449,6 +454,7 @@ enum DashboardSection: Int, CaseIterable, Identifiable {
         case .workflows:   return "Suggestions you've kept"
         case .suggestions: return "What Claude noticed in your week"
         case .team:        return "Sharing with people you work with"
+        case .settings:    return "What this app does on its own"
         }
     }
 
