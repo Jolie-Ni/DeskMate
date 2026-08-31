@@ -11,14 +11,14 @@ different engine is the one that lets dialect bugs through.
 import os
 import sys
 
-DEFAULT_URL = "postgresql://postgres:postgres@localhost:55432/observer_test"
-DB_URL = os.environ.get("OBSERVER_DB_URL", DEFAULT_URL)
+DEFAULT_URL = "postgresql://postgres:postgres@localhost:55432/deskmate_test"
+DB_URL = os.environ.get("DESKMATE_DB_URL", DEFAULT_URL)
 
 # A guard rail, not a convention: this suite drops the schema on every run, and
 # the cost of pointing it at the wrong database once is the whole hub.
 if not DB_URL.rsplit("/", 1)[-1].split("?")[0].endswith("_test"):
-    sys.exit("refusing to run: OBSERVER_DB_URL must name a database ending in _test")
-os.environ["OBSERVER_DB_URL"] = DB_URL
+    sys.exit("refusing to run: DESKMATE_DB_URL must name a database ending in _test")
+os.environ["DESKMATE_DB_URL"] = DB_URL
 
 from fastapi.testclient import TestClient  # noqa: E402
 import app as srv  # noqa: E402

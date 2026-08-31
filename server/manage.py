@@ -11,22 +11,22 @@ import db
 from app import sha256, sign
 
 PUBLIC_URL = os.environ.get(
-    "OBSERVER_PUBLIC_URL", "https://local-observer-hub.vercel.app").rstrip("/")
+    "DESKMATE_PUBLIC_URL", "https://deskmate-hub.vercel.app").rstrip("/")
 
 
 def require_secret() -> None:
     """Checked before anything is written, so a refused command leaves no org
     behind for someone to wonder about."""
-    if os.environ.get("OBSERVER_SECRET", "") in ("", "dev-secret-change-me"):
-        sys.exit("OBSERVER_SECRET is not set. Pull it first:\n"
+    if os.environ.get("DESKMATE_SECRET", "") in ("", "dev-secret-change-me"):
+        sys.exit("DESKMATE_SECRET is not set. Pull it first:\n"
                  "  vercel env pull .env.production.local\n"
-                 "then pass it through envrun.py alongside OBSERVER_DB_URL.")
+                 "then pass it through envrun.py alongside DESKMATE_DB_URL.")
 
 
 def admin_link(org_id: str) -> str:
     """The same link the sign-in form emails, minted here instead.
 
-    Signed with OBSERVER_SECRET, so a link made with the dev default would not
+    Signed with DESKMATE_SECRET, so a link made with the dev default would not
     open the deployed hub — and if the deployed hub were still using that
     default, anyone could mint one. Refusing to sign with it covers both.
     """

@@ -29,7 +29,7 @@ for line in Path(env_path).read_text().splitlines():
     values[k.strip()] = v
 
 env = os.environ.copy()
-for pair in mapping.split(","):           # e.g. OBSERVER_DB_URL=DATABASE_URL
+for pair in mapping.split(","):           # e.g. DESKMATE_DB_URL=DATABASE_URL
     dest, _, src = pair.partition("=")
     if src not in values:
         sys.exit(f"{src} is not in {env_path}")

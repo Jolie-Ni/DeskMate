@@ -1,4 +1,4 @@
-# Local Observer
+# DeskMate
 
 A macOS app that quietly watches how you actually work, then tells you which parts of it could be handed to an AI.
 
@@ -35,18 +35,18 @@ you so. Capture and everything already collected still work fine.
 daemon to run:
 
 ```sh
-.build/release/ObserverDashboard
+.build/release/DeskMateDashboard
 ```
 
-**4. Press Start**, top right. The dashboard spawns `ObserverDaemon` for you
+**4. Press Start**, top right. The dashboard spawns `DeskMateDaemon` for you
 and shows a red dot while it runs; **Stop** ends it.
 
 **5. Grant permissions.** macOS will prompt on first capture. Whatever you miss,
 the daemon reports at startup in
-`~/Library/Application Support/LocalObserver/daemon.log`:
+`~/Library/Application Support/DeskMate/daemon.log`:
 
 ```
-[observer] permissions:
+[deskmate] permissions:
   Screen Recording: ✅
   Accessibility:    ❌
 ```
@@ -67,26 +67,26 @@ need repetition to be visible.
 The daemon is deliberately not tied to the window's lifetime: closing the
 dashboard leaves recording running, because quitting a window you opened to
 read something should not silently stop collection. Stopping is an explicit act.
-If you move the binaries apart, point `OBSERVER_DAEMON_PATH` at the daemon.
+If you move the binaries apart, point `DESKMATE_DAEMON_PATH` at the daemon.
 
 ## How it works
 
 ```
-ObserverDaemon  ──►  ~/Library/Application Support/LocalObserver/
-  every 30s            observer.sqlite      (captures, suggestions, workflows)
+DeskMateDaemon  ──►  ~/Library/Application Support/DeskMate/
+  every 30s            deskmate.sqlite      (captures, suggestions, workflows)
   screenshot           screenshots/*.jpg    (local only, purged after 30 days)
   + OCR + redact
                               │
                               ▼
-ObserverDashboard  ──►  cluster into sessions  ──►  Claude API  ──►  suggestions
+DeskMateDashboard  ──►  cluster into sessions  ──►  Claude API  ──►  suggestions
   (SwiftUI, manual)       (local, no network)      (text digests only)
 ```
 
-**Capture loop** (`ObserverDaemon`) — every 30 seconds, if you're not idle, it grabs the frontmost app name, window title, browser URL (via AppleScript), and a screenshot. Vision framework OCRs the image locally, a regex pass redacts secrets, and the row lands in SQLite.
+**Capture loop** (`DeskMateDaemon`) — every 30 seconds, if you're not idle, it grabs the frontmost app name, window title, browser URL (via AppleScript), and a screenshot. Vision framework OCRs the image locally, a regex pass redacts secrets, and the row lands in SQLite.
 
-**Analysis** (`ObserverAnalyzer`) — runs only when you click *Analyze* in the dashboard. Captures from the last 7 days are clustered locally into sessions (same app/host, gaps under 5 minutes, sessions shorter than 60s dropped). Session digests go to Claude in two passes: Haiku labels each session in batches of 12, then Opus reads the labeled timeline and proposes workflows.
+**Analysis** (`DeskMateAnalyzer`) — runs only when you click *Analyze* in the dashboard. Captures from the last 7 days are clustered locally into sessions (same app/host, gaps under 5 minutes, sessions shorter than 60s dropped). Session digests go to Claude in two passes: Haiku labels each session in batches of 12, then Opus reads the labeled timeline and proposes workflows.
 
-**Dashboard** (`ObserverDashboard`) — four tabs. *Today* shows where your time went, *Workflows* holds the procedures you kept, *Suggestions* lists what Claude proposed (keep or dismiss), *Team* joins a shared hub and shows which workflows you have shared to it, and *Settings* switches off anything the app does on its own.
+**Dashboard** (`DeskMateDashboard`) — four tabs. *Today* shows where your time went, *Workflows* holds the procedures you kept, *Suggestions* lists what Claude proposed (keep or dismiss), *Team* joins a shared hub and shows which workflows you have shared to it, and *Settings* switches off anything the app does on its own.
 
 ## Privacy
 
@@ -94,7 +94,7 @@ This tool sees everything on your screen, so the defaults are deliberately conse
 
 - **Screenshots never leave the machine.** Only text digests — app name, URL host and paths, window titles, and a ~200 character redacted OCR snippet per session — are sent to the Claude API.
 - **Analysis is manual** — except the nightly summary, if you enable it. The daemon never calls out to the network. Nothing is sent until you click *Analyze*, or until the scheduled summary runs (see Daily summary below), which sends a sample of screen text to Claude every night and writes the result to Google Drive.
-- **Apps are excluded by bundle ID** — 1Password, Keychain Access, and the login window are skipped entirely (`Sources/ObserverCore/Config.swift`).
+- **Apps are excluded by bundle ID** — 1Password, Keychain Access, and the login window are skipped entirely (`Sources/DeskMateCore/Config.swift`).
 - **URLs are excluded by host fragment** — anything containing `bank`, `chase.com`, `wellsfargo.com`, or `1password.com` is dropped before capture.
 - **OCR text is redacted** before it's written to disk: emails, card numbers, SSNs, `password:`/`api_key:` lines, `sk-` keys, and long hex tokens.
 - **Captures and screenshots are purged after 30 days**, checked once per day by the daemon.
@@ -104,7 +104,7 @@ Redaction is regex-based and best-effort — it is not a guarantee. If an app sh
 To wipe everything:
 
 ```sh
-rm -rf ~/Library/Application\ Support/LocalObserver
+rm -rf ~/Library/Application\ Support/DeskMate
 ```
 
 ## Daily summary
@@ -114,8 +114,8 @@ anything else that wants context about the week.
 
 ```sh
 swift build -c release
-cp scripts/com.hconsult.localobserver.summary.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.hconsult.localobserver.summary.plist
+cp scripts/com.hconsult.deskmate.summary.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.hconsult.deskmate.summary.plist
 ```
 
 It runs at 23:59 and writes
@@ -136,8 +136,8 @@ The prose needs an API key, which launchd will not inherit from your shell:
 
 ```sh
 printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" \
-  > ~/Library/Application\ Support/LocalObserver/summary.env
-chmod 600 ~/Library/Application\ Support/LocalObserver/summary.env
+  > ~/Library/Application\ Support/DeskMate/summary.env
+chmod 600 ~/Library/Application\ Support/DeskMate/summary.env
 ```
 
 Without it the job still runs and still writes the file, minus the prose.
@@ -152,7 +152,7 @@ it entirely.
 Run it by hand any time with `./scripts/daily-summary.sh`, override the
 destination with `--dir`, skip the model call with `--no-narrative`, and ignore
 the off switch with `--force`.
-Output goes to `~/Library/Logs/local-observer-summary.log`.
+Output goes to `~/Library/Logs/deskmate-summary.log`.
 
 If the Mac is asleep at 23:59, launchd runs the job on wake rather than skipping
 the day, and the job notices it is late: past midday it summarises the current
@@ -163,17 +163,17 @@ it describes, not the moment it ran.
 
 | Target | What's in it |
 |---|---|
-| `ObserverCore` | `Config` (intervals, paths, exclusions), GRDB `Storage` + migrations, `Capture` / `Workflow` models, Vision OCR, redaction, daemon control, team account and hub client |
-| `ObserverDaemon` | capture loop, screenshot, idle detection, browser URL, permission check |
-| `ObserverAnalyzer` | session clustering, Anthropic Messages API client, Haiku labeling, Opus pattern detection, automation planning |
-| `ObserverDashboard` | SwiftUI app — Today, Workflows, Suggestions, Team, Settings |
-| `ObserverFixture` | test harness: fixture runs, comparator checks, sharing checks, hub round trips |
-| `ObserverSummary` | the nightly activity summary that the launchd job runs |
+| `DeskMateCore` | `Config` (intervals, paths, exclusions), GRDB `Storage` + migrations, `Capture` / `Workflow` models, Vision OCR, redaction, daemon control, team account and hub client |
+| `DeskMateDaemon` | capture loop, screenshot, idle detection, browser URL, permission check |
+| `DeskMateAnalyzer` | session clustering, Anthropic Messages API client, Haiku labeling, Opus pattern detection, automation planning |
+| `DeskMateDashboard` | SwiftUI app — Today, Workflows, Suggestions, Team, Settings |
+| `DeskMateFixture` | test harness: fixture runs, comparator checks, sharing checks, hub round trips |
+| `DeskMateSummary` | the nightly activity summary that the launchd job runs |
 | `server/` | the team hub — FastAPI over Postgres, deployed separately ([its own README](server/README.md)) |
 
 ## Configuration
 
-There is no config file yet. Tunables live in `Sources/ObserverCore/Config.swift`:
+There is no config file yet. Tunables live in `Sources/DeskMateCore/Config.swift`:
 
 | Setting | Default |
 |---|---|

@@ -1,4 +1,4 @@
-"""Local Observer hub — shares saved workflows to a company portal.
+"""DeskMate hub — shares saved workflows to a company portal.
 
 Scoped for teams under ten people. Four client endpoints, one admin page.
 See the design brief for what was deliberately left out.
@@ -28,8 +28,8 @@ from pydantic import BaseModel, Field
 
 import db
 
-app = FastAPI(title="Local Observer hub", docs_url=None, redoc_url=None)
-SECRET = os.environ.get("OBSERVER_SECRET", "dev-secret-change-me")
+app = FastAPI(title="DeskMate hub", docs_url=None, redoc_url=None)
+SECRET = os.environ.get("DESKMATE_SECRET", "dev-secret-change-me")
 
 
 def now() -> str:
@@ -314,7 +314,7 @@ def send_login_link(to: str, link: str, org_name: str) -> None:
     body = json.dumps({
         "from": sender,
         "to": [to],
-        "subject": f"Sign in to {org_name} on Local Observer",
+        "subject": f"Sign in to {org_name} on DeskMate",
         "html": (f"<p>Here is your sign-in link for <b>{esc(org_name)}</b>.</p>"
                  f'<p><a href="{esc(link)}">See what your team has shared</a></p>'
                  "<p>If you did not ask for this, nothing has happened — ignore it.</p>"),
@@ -331,7 +331,7 @@ def send_login_link(to: str, link: str, org_name: str) -> None:
 # Identical whether or not the domain belongs to a customer. Saying "no such
 # team" here would turn the form into a customer list.
 SENT = ("<h1>Check your email</h1>"
-        "<p>If that address belongs to a team on Local Observer, a sign-in link "
+        "<p>If that address belongs to a team on DeskMate, a sign-in link "
         "is on its way. The link opens your team's shared workflows.</p>"
         '<p class=quiet><a href="/">Use a different address</a></p>')
 
@@ -389,8 +389,8 @@ def signin() -> HTMLResponse:
     domain. The link is what proves the person actually holds an address there,
     and it is the only way into a team's workflows.
     """
-    return page("Sign in — Local Observer", """
-<h1>Local Observer</h1>
+    return page("Sign in — DeskMate", """
+<h1>DeskMate</h1>
 <p>See the workflows your team has chosen to share.</p>
 <form method=post action="/admin/login">
   <label for=email>Work email</label>
@@ -400,7 +400,7 @@ def signin() -> HTMLResponse:
 </form>
 <p class=quiet>We email you a link rather than asking for a password. Only
 addresses at a team's own domain can open that team's workflows.</p>
-<p class=quiet>Everyone runs Local Observer on their own Mac, and what they see
+<p class=quiet>Everyone runs DeskMate on their own Mac, and what they see
 stays there. This holds only the procedures they explicitly chose to share.</p>""")
 
 

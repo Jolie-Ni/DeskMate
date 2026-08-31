@@ -7,7 +7,7 @@
 set -eu
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-ENV_FILE="$HOME/Library/Application Support/LocalObserver/summary.env"
+ENV_FILE="$HOME/Library/Application Support/DeskMate/summary.env"
 
 # Sourcing an env file with a blank key would clobber a key already exported in
 # the shell, so an interactive run keeps whatever it came in with.
@@ -16,9 +16,9 @@ INHERITED="${ANTHROPIC_API_KEY:-}"
 [ -z "${ANTHROPIC_API_KEY:-}" ] && ANTHROPIC_API_KEY="$INHERITED"
 export ANTHROPIC_API_KEY
 
-BIN="$REPO/.build/release/ObserverSummary"
-[ -x "$BIN" ] || BIN="$REPO/.build/debug/ObserverSummary"
-[ -x "$BIN" ] || { echo "no ObserverSummary binary — run: swift build -c release" >&2; exit 1; }
+BIN="$REPO/.build/release/DeskMateSummary"
+[ -x "$BIN" ] || BIN="$REPO/.build/debug/DeskMateSummary"
+[ -x "$BIN" ] || { echo "no DeskMateSummary binary — run: swift build -c release" >&2; exit 1; }
 
 echo "--- $(date '+%Y-%m-%d %H:%M:%S %Z') ---"
 exec "$BIN" "$@"
