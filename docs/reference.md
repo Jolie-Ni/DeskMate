@@ -86,7 +86,7 @@ DeskMateDashboard  ──►  cluster into sessions  ──►  Claude API  ─�
 
 Two things keep a re-run cheap and quiet. Labels are cached in the database under a session id that is a stable hash of (start, bucket), so re-clustering doesn't pay Haiku twice for the same session. And a proposal matching a workflow you dismissed in the last 7 days is recorded as auto-dismissed rather than shown again.
 
-**Dashboard** (`DeskMateDashboard`) — five tabs. *Today* shows where your time went, *Workflows* holds the procedures you kept, *Suggestions* lists what Claude proposed (keep or dismiss), *Team* joins a shared hub and shows which workflows you have shared to it, and *Settings* switches off anything the app does on its own. The views are built from Celadon (青瓷), the design system under `Sources/DeskMateDashboard/DesignSystem`; `DESKMATE_DESIGN_MODE=1` replaces the whole window with its component catalog, which is how you read the design docs without an Xcode preview canvas.
+**Dashboard** (`DeskMateDashboard`) — four tabs. *Today* shows where your time went, *Workflows* holds the procedures you kept, *Suggestions* lists what Claude proposed (keep or dismiss), and *Settings* switches off anything the app does on its own. A fifth tab, *Team*, joins a shared hub and shows what you have shared to it; it is hidden behind `Config.sharingEnabled`, which is `false` — see [Team sharing](#team-sharing). The views are built from Celadon (青瓷), the design system under `Sources/DeskMateDashboard/DesignSystem`; `DESKMATE_DESIGN_MODE=1` replaces the whole window with its component catalog, which is how you read the design docs without an Xcode preview canvas.
 
 ## Privacy
 
@@ -98,7 +98,7 @@ This tool sees everything on your screen, so the defaults are deliberately conse
 - **URLs are excluded by host fragment** — anything containing `bank`, `chase.com`, `wellsfargo.com`, or `1password.com` is dropped before capture.
 - **OCR text is redacted** before it's written to disk: emails, card numbers, SSNs, `password:`/`api_key:` lines, `sk-` keys, and long hex tokens.
 - **Captures and screenshots are purged after 30 days**, checked once per day by the daemon.
-- **Sharing to the team hub is per-workflow and deliberate.** Only a workflow's title, summary, trigger, SOP steps and automation plan leave the machine — never captures, screenshots or OCR text. `SharePayload` is the whole wire format, and the preview you approve is built from the same type the client uploads, so the two cannot drift. Before it sends, `SensitivityScan` flags emails, URLs, proper nouns, people and monetary amounts in that text: SOP steps are *written by the model after the fact*, so nothing in them ever passed through capture-time redaction. It flags and never removes — what is fine to share with your employer is your call, not a regex's.
+- **Sharing to the team hub is off entirely** (`Config.sharingEnabled` is `false`), so the rest of this bullet describes a path the shipped app cannot reach. When enabled, sharing is per-workflow and deliberate: only a workflow's title, summary, trigger, SOP steps and automation plan leave the machine — never captures, screenshots or OCR text. `SharePayload` is the whole wire format, and the preview you approve is built from the same type the client uploads, so the two cannot drift. Before it sends, `SensitivityScan` flags emails, URLs, proper nouns, people and monetary amounts in that text: SOP steps are *written by the model after the fact*, so nothing in them ever passed through capture-time redaction. It flags and never removes — what is fine to share with your employer is your call, not a regex's.
 
 Redaction is regex-based and best-effort — it is not a guarantee. If an app shows something you'd rather never be captured, add its bundle ID to `excludedBundleIDs`.
 
@@ -204,7 +204,7 @@ half-written MP3.
 | `DeskMateCore` | `Config` (intervals, paths, exclusions), GRDB `Storage` + migrations, `Capture` / `Workflow` models, Vision OCR, redaction, daemon control, team account and hub client |
 | `DeskMateDaemon` | capture loop, screenshot, idle detection, browser URL, permission check |
 | `DeskMateAnalyzer` | session clustering, Anthropic Messages API client, Haiku labeling, Opus pattern detection, automation planning |
-| `DeskMateDashboard` | SwiftUI app — Today, Workflows, Suggestions, Team, Settings — over the Celadon design system in `DesignSystem/` (tokens, primitives, components, catalog) |
+| `DeskMateDashboard` | SwiftUI app — Today, Workflows, Suggestions, Settings (+ Team, behind `Config.sharingEnabled`) — over the Celadon design system in `DesignSystem/` (tokens, primitives, components, catalog) |
 | `DeskMateFixture` | test harness: fixture runs, comparator checks, sharing checks, hub round trips (see below) |
 | `DeskMateSummary` | the nightly activity summary that the launchd job runs |
 | `server/` | the team hub — FastAPI over Postgres, deployed separately ([its own README](server/README.md)) |
@@ -254,7 +254,8 @@ the daily-summary switch. Tunables live in `Sources/DeskMateCore/Config.swift`:
 | `dismissalWindowDays` | 7 — how long a dismissal suppresses a procedure before it is proposed again |
 | `connectorRefreshDays` | 7 — how long the Claude connector directory cache stays fresh |
 | `connectorDirectoryURL` | `https://claude.com/connectors` |
-| `hubURL` | `https://deskmate-hub.vercel.app` |
+| `sharingEnabled` | `false` — see [Team sharing](#team-sharing) |
+| `hubURL` | `https://deskmate-hub.vercel.app` (unused while sharing is off) |
 | `screenshotMaxDimension` | 1920 |
 | `jpegQuality` | 0.5 |
 | `excludedBundleIDs` | 1Password, Keychain Access, login window |
@@ -266,12 +267,30 @@ Models are constants too: `claude-haiku-4-5` for labeling, `claude-opus-4-7`
 for pattern detection and automation planning, `claude-sonnet-5` for the
 nightly prose.
 
-**`hubURL` does not resolve yet.** The Vercel project is still named
-`local-observer-hub` and was not renamed with the rest of the rebrand, so the
-Team tab fails with "a server with this host name can't be found" — which reads
-like a network problem rather than a wrong constant. Until the project is
-renamed, run against the old host with
-`DESKMATE_HUB_URL=https://local-observer-hub.vercel.app`.
+### Team sharing
+
+`Config.sharingEnabled` is `false`, so nothing in this section is reachable from
+the shipped app. DeskMate targets individuals while feedback is being collected;
+sharing only pays off selling into enterprises, and its hub host does not
+resolve since the rebrand, so turning it off beat leaving it half-working.
+
+With the flag false the *Team* tab is absent from the tab bar, workflow rows
+show no Share / Retract / Retry controls, a suggestion offers plain "Save as
+workflow" rather than "Save & share with team", and `enroll` / `share` /
+`retract` refuse to run even if a code path reaches them. `DashboardSection.visible`
+is the single source of which tabs exist.
+
+It is a flag rather than a deletion: `HubClient`, `SensitivityScan` and the
+share preview all stay compiled, so re-enabling is one line. `DeskMateFixture`'s
+`team` subcommands stay ungated on purpose — they exist to exercise the hub
+independently of what the product exposes.
+
+**If you do re-enable it, `hubURL` does not resolve.** The Vercel project is
+still named `local-observer-hub` and was not renamed with the rest of the
+rebrand, so the Team tab fails with "a server with this host name can't be
+found" — which reads like a network problem rather than a wrong constant. Point
+a run at the old host with
+`DESKMATE_HUB_URL=https://local-observer-hub.vercel.app`, or rename the project.
 
 ### Environment variables
 
