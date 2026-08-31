@@ -1,6 +1,20 @@
 import Foundation
 
 public enum Config {
+    /// Team sharing — the Team tab, hub enrolment, and every "share this
+    /// workflow" affordance — is off.
+    ///
+    /// DeskMate is aimed at individuals while we collect feedback; selling into
+    /// enterprises is later, and sharing is the feature that only pays off
+    /// there. Keeping it behind a flag rather than deleting it means the hub
+    /// client, the sensitivity scan and the share preview stay compiled and
+    /// honest, so turning it back on is one line rather than an archaeology
+    /// project.
+    ///
+    /// Flipping this to `true` also requires the Vercel project to be renamed
+    /// to `deskmate-hub` — see `hubURL` below, which does not resolve today.
+    public static let sharingEnabled = false
+
     public static let captureIntervalSeconds: TimeInterval = 30
     public static let idleThresholdSeconds: TimeInterval = 120
     public static let retentionDays: Int = 30

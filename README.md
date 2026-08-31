@@ -86,7 +86,7 @@ DeskMateDashboard  ──►  cluster into sessions  ──►  Claude API  ─�
 
 **Analysis** (`DeskMateAnalyzer`) — runs only when you click *Analyze* in the dashboard. Captures from the last 7 days are clustered locally into sessions (same app/host, gaps under 5 minutes, sessions shorter than 60s dropped). Session digests go to Claude in two passes: Haiku labels each session in batches of 12, then Opus reads the labeled timeline and proposes workflows.
 
-**Dashboard** (`DeskMateDashboard`) — four tabs. *Today* shows where your time went, *Workflows* holds the procedures you kept, *Suggestions* lists what Claude proposed (keep or dismiss), *Team* joins a shared hub and shows which workflows you have shared to it, and *Settings* switches off anything the app does on its own.
+**Dashboard** (`DeskMateDashboard`) — four tabs. *Today* shows where your time went, *Workflows* holds the procedures you kept, *Suggestions* lists what Claude proposed (keep or dismiss), and *Settings* switches off anything the app does on its own. A fifth tab, *Team*, joins a shared hub and shows what you have shared to it; it is hidden behind `Config.sharingEnabled`, which is `false` — see [Team sharing](#team-sharing).
 
 ## Privacy
 
@@ -166,7 +166,7 @@ it describes, not the moment it ran.
 | `DeskMateCore` | `Config` (intervals, paths, exclusions), GRDB `Storage` + migrations, `Capture` / `Workflow` models, Vision OCR, redaction, daemon control, team account and hub client |
 | `DeskMateDaemon` | capture loop, screenshot, idle detection, browser URL, permission check |
 | `DeskMateAnalyzer` | session clustering, Anthropic Messages API client, Haiku labeling, Opus pattern detection, automation planning |
-| `DeskMateDashboard` | SwiftUI app — Today, Workflows, Suggestions, Team, Settings |
+| `DeskMateDashboard` | SwiftUI app — Today, Workflows, Suggestions, Settings (+ Team, behind `Config.sharingEnabled`) |
 | `DeskMateFixture` | test harness: fixture runs, comparator checks, sharing checks, hub round trips |
 | `DeskMateSummary` | the nightly activity summary that the launchd job runs |
 | `server/` | the team hub — FastAPI over Postgres, deployed separately ([its own README](server/README.md)) |
@@ -184,5 +184,28 @@ There is no config file yet. Tunables live in `Sources/DeskMateCore/Config.swift
 | `jpegQuality` | 0.5 |
 | `excludedBundleIDs` | 1Password, Keychain Access, login window |
 | `excludedURLHostFragments` | `bank`, `chase.com`, `wellsfargo.com`, `1password.com` |
+| `sharingEnabled` | `false` — see below |
+
+### Team sharing
+
+`Config.sharingEnabled` is `false`. DeskMate is aimed at individuals while we
+collect feedback; sharing only pays off selling into enterprises, so it is off
+rather than half-working. With the flag false:
+
+- the **Team** tab is not in the tab bar, so there is nowhere to enter an
+  enrolment token
+- workflow rows show no **Share** / **Retract** / **Retry** controls
+- a suggestion offers plain **Save as workflow**, not **Save & share with team**
+- `enroll`, `share` and `retract` refuse to run, so nothing reaches the hub even
+  if a code path gets there
+
+It is a flag rather than a deletion: `HubClient`, the sensitivity scan and the
+share preview stay compiled, so turning it back on is one line. A machine that
+enrolled earlier keeps its stored account — it just stops being offered.
+
+Before flipping it to `true`, rename the Vercel project to `deskmate-hub`;
+`Config.hubURL` does not resolve until you do. `DeskMateFixture`'s team
+subcommands are deliberately *not* gated, so you can exercise the hub with
+`DESKMATE_HUB_URL` while the product feature is still off.
 
 Analysis lookback (7 days), session gap (5 min), and labeling batch size (12) are currently constructor defaults in `AnalysisRunner`, `SessionClusterer`, and `LabelingService`.

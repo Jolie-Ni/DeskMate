@@ -2,6 +2,10 @@ import DeskMateCore
 import SwiftUI
 
 /// Joining a team, and seeing what that means before you do.
+///
+/// Unreachable while `Config.sharingEnabled` is false — the Team tab is not in
+/// `DashboardSection.visible` — but it still checks, so the view is safe to
+/// present from anywhere rather than depending on the tab list to protect it.
 struct TeamView: View {
     @EnvironmentObject var sharing: SharingModel
     @EnvironmentObject var model: DashboardModel
@@ -14,7 +18,18 @@ struct TeamView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: theme.sectionGap) {
-                if sharing.isEnrolled { enrolled } else { joinForm }
+                if !Config.sharingEnabled {
+                    DSEmptyState(
+                        systemImage: "person.2.slash",
+                        title: "Team sharing is off",
+                        message: "DeskMate is running in single-player mode. "
+                               + "Everything stays on this Mac."
+                    )
+                } else if sharing.isEnrolled {
+                    enrolled
+                } else {
+                    joinForm
+                }
             }
             .padding(.horizontal, theme.space(3))
             .padding(.bottom, theme.space(3))

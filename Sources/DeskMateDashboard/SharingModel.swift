@@ -21,12 +21,23 @@ final class SharingModel: ObservableObject {
         self.storage = storage
     }
 
-    var isEnrolled: Bool { account != nil && TokenStore.load() != nil }
+    /// Gates every sharing affordance in the UI: the share controls on a
+    /// workflow row and the "Save & share" button on a suggestion both hang
+    /// off this. With `Config.sharingEnabled` false it is false regardless of
+    /// what is on disk, so a machine that enrolled before the flag landed
+    /// stops offering to share without losing its stored account.
+    var isEnrolled: Bool {
+        Config.sharingEnabled && account != nil && TokenStore.load() != nil
+    }
     var tokenBacking: TokenStore.Backing { TokenStore.backing }
 
     // MARK: Enrolment
 
     func enroll(code: String, email: String, name: String) async {
+        guard Config.sharingEnabled else {
+            enrollError = "Team sharing is turned off in this build."
+            return
+        }
         enrolling = true
         enrollError = nil
         defer { enrolling = false }
@@ -75,7 +86,8 @@ final class SharingModel: ObservableObject {
     }
 
     func share(_ workflow: Workflow) async {
-        guard let storage, let id = workflow.id, let token = TokenStore.load() else { return }
+        guard Config.sharingEnabled,
+              let storage, let id = workflow.id, let token = TokenStore.load() else { return }
         uploading = true
         lastUploadError = nil
         defer { uploading = false }
@@ -98,7 +110,8 @@ final class SharingModel: ObservableObject {
     }
 
     func retract(_ workflow: Workflow) async {
-        guard let storage, let id = workflow.id, let key = workflow.shareKey,
+        guard Config.sharingEnabled,
+              let storage, let id = workflow.id, let key = workflow.shareKey,
               let token = TokenStore.load() else { return }
         do {
             try await client.retract(key: key, token: token)

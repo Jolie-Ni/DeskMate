@@ -4,6 +4,12 @@ import DeskMateCore
 /// Drives HubClient + TokenStore + TeamAccount against a running hub, so the
 /// networking and credential storage are exercised by the same code the app
 /// uses rather than by curl.
+///
+/// Deliberately NOT gated on `Config.sharingEnabled`. These are explicit
+/// subcommands of a dev harness, and their whole job is exercising the hub
+/// independently of what the product currently exposes — gating them would
+/// mean you cannot test sharing without first shipping it. Point them at a
+/// reachable hub with `DESKMATE_HUB_URL`; the default host does not resolve.
 enum TeamCheck {
     static func enroll(code: String, email: String, name: String) async throws {
         let client = HubClient()

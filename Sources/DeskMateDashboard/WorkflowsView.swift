@@ -48,7 +48,8 @@ struct WorkflowsView: View {
                 .animation(DSMotion.tap, value: confirmingID)
             }
             .onChange(of: model.pendingShareWorkflowID) { _, id in
-                guard let id, let wf = model.workflows.first(where: { $0.id == id }) else { return }
+                guard Config.sharingEnabled,
+                      let id, let wf = model.workflows.first(where: { $0.id == id }) else { return }
                 sharingTarget = ShareTarget(workflow: wf)
                 model.pendingShareWorkflowID = nil
             }
