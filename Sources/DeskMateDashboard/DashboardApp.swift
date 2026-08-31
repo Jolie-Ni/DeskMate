@@ -412,6 +412,12 @@ struct ContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                // Gutter under the tab bar. Every tab pads its own sides and
+                // bottom but not its top, and several open on a toolbar row of
+                // their own — without this, that row stacks flush against the
+                // tab bar and the two glass surfaces read as one control.
+                // It belongs here, not in the tabs, so no tab can forget it.
+                .padding(.top, DSTheme.default.space(2))
             }
         }
         .onAppear { model.reload(); model.startPollingDaemon() }
