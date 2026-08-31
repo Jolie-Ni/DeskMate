@@ -44,7 +44,7 @@ Let it run for three or four working days before you look at the dashboard. The 
 
 ## What it does
 
-**The agent** It records the frontmost app, the window title and the browser URL, OCRs the screenshot on-device with Vision, redacts any personal informtion, and writes to a local database. The screenshot stays on disk and is deleted after 30 days.
+**The agent** runs locally and takes a screenshot every 30 seconds while you are not idle. It records the frontmost app, the window title and the browser URL, OCRs the screenshot on-device with Vision, redacts personal information, and writes to a local database. The screenshot stays on disk and is deleted after 30 days.
 
 **The dashboard** reconstructs workflows out of those rows. It shows where the hours went and which apps and sites ate them, and which sequences you repeat often enough to be worth handing over. Each suggestion carries a confidence score and the step-by-step procedure it thinks you follow, so you can read it back and disagree with it.
 
