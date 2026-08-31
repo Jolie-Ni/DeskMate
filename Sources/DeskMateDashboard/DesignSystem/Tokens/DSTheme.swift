@@ -18,7 +18,6 @@ struct DSTheme: Identifiable, Equatable {
     // Identity
     let id: String
     let name: String
-    let script: String        // CJK companion mark, used as a quiet accent
 
     // MARK: Palette — brand
     /// Celadon glaze. The primary brand green.
@@ -46,6 +45,17 @@ struct DSTheme: Identifiable, Equatable {
 
     // MARK: Glass
     let material: Material
+    /// White wash laid over the material so a card reads lighter than the
+    /// canvas it sits on. Without it the glass borrows the canvas green and
+    /// the card edge disappears.
+    let surfaceWash: Color
+    let surfaceWashOpacity: Double
+    /// Green over a *washed* surface. Much lighter than `glassTintOpacity`:
+    /// the wash has already put the card near white, and a heavy tint here
+    /// would drag it straight back to the canvas tone.
+    let surfaceTintOpacity: Double
+    /// Green over bare material — the translucent chrome bars, which have no
+    /// wash under them and want the full glaze.
     let glassTint: Color
     let glassTintOpacity: Double
     let specular: Color
@@ -97,7 +107,6 @@ extension DSTheme {
     static let celadon = DSTheme(
         id: "celadon",
         name: "Celadon",
-        script: "青瓷",
 
         accent:        Color(red: 0.42, green: 0.66, blue: 0.56),   // #6BA88F
         accentDeep:    Color(red: 0.18, green: 0.38, blue: 0.32),   // #2E6152
@@ -110,11 +119,14 @@ extension DSTheme {
         inkTertiary:   Color(red: 0.55, green: 0.63, blue: 0.61),
         onAccent:      .white,
 
-        canvasBase:    Color(red: 0.957, green: 0.973, blue: 0.965),
-        canvasBloomA:  Color(red: 0.74, green: 0.89, blue: 0.83),
-        canvasBloomB:  Color(red: 0.90, green: 0.95, blue: 0.90),
+        canvasBase:    Color(red: 0.918, green: 0.945, blue: 0.933),
+        canvasBloomA:  Color(red: 0.70, green: 0.86, blue: 0.80),
+        canvasBloomB:  Color(red: 0.86, green: 0.92, blue: 0.87),
 
         material:            .thin,
+        surfaceWash:         .white,
+        surfaceWashOpacity:  0.80,
+        surfaceTintOpacity:  0.05,
         glassTint:           Color(red: 0.44, green: 0.72, blue: 0.62),
         glassTintOpacity:    0.16,
         specular:            .white,
@@ -141,7 +153,7 @@ extension DSTheme {
         contentMaxWidth: 860,
 
         shadowColor:   Color(red: 0.10, green: 0.28, blue: 0.24),
-        shadowOpacity: 0.10,
+        shadowOpacity: 0.14,
         shadowRadius:  12,   // iOS 18
         shadowY:        4,   // iOS 8
 

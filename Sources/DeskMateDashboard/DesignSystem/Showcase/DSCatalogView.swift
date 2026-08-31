@@ -26,7 +26,7 @@ struct DSCatalogView: View {
             VStack(spacing: 0) {
                 DSLargeTitleBar(
                     title: "Celadon",
-                    subtitle: "青瓷 · component catalog"
+                    subtitle: "Component catalog"
                 ) {
                     DSIconButton(systemName: "square.and.arrow.up", diameter: 40) {
                         toast = DSToast(message: "Nothing to share yet", tone: .neutral)

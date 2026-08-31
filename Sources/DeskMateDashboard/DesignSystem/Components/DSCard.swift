@@ -180,13 +180,8 @@ struct DSSummaryCard: View {
         DSCard(elevation: .raised) {
             VStack(alignment: .leading, spacing: theme.space(2)) {
                 VStack(alignment: .leading, spacing: theme.space(0.75)) {
-                    HStack {
-                        DSEyebrow(text: eyebrow, color: theme.accentDeep)
-                        Spacer()
-                        Text(theme.script)
-                            .font(.system(size: 13, weight: .regular, design: theme.headingDesign))
-                            .foregroundStyle(theme.accent.opacity(0.45))
-                    }
+                    DSEyebrow(text: eyebrow, color: theme.accentDeep)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Text(title)
                         .font(theme.display(28))
                         .tracking(theme.tracking)

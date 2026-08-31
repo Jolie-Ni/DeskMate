@@ -40,10 +40,6 @@ struct DSLargeTitleBar<Trailing: View>: View {
                     .tracking(theme.tracking)
                     .foregroundStyle(theme.ink)
 
-                Text(theme.script)
-                    .font(.system(size: 15, weight: .regular, design: theme.headingDesign))
-                    .foregroundStyle(theme.accent.opacity(0.45 * (1 - collapse)))
-
                 Spacer(minLength: theme.space(2))
 
                 trailing()

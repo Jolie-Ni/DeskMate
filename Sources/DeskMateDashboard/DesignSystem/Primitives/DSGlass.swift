@@ -4,10 +4,11 @@
 //
 //  Anatomy, back to front:
 //    1. system material (the actual blur of what's behind)
-//    2. a green wash, so the glass belongs to the brand
-//    3. a top-to-bottom sheen, so light appears to fall from above
-//    4. a hairline border with a bright top edge (the specular)
-//    5. a soft, low-opacity shadow to lift it off the canvas
+//    2. a white wash, so the surface reads lighter than the canvas
+//    3. a green wash, so the glass belongs to the brand
+//    4. a top-to-bottom sheen, so light appears to fall from above
+//    5. a hairline border with a bright top edge (the specular)
+//    6. a soft, low-opacity shadow to lift it off the canvas
 //
 
 import SwiftUI
@@ -31,8 +32,16 @@ struct DSGlassSurface: ViewModifier {
 
     var radius: CGFloat? = nil
     var elevation: DSElevation = .resting
-    /// Extra green. Use for selected / active surfaces.
+    /// Extra green. Use for selected / active surfaces. Damped by
+    /// `emphasisScale` before it reaches the tint — see there for why.
     var emphasis: Double = 0
+
+    /// Emphasis arrives in values authored against the old un-washed surface,
+    /// where the card was already green enough that +0.05 was a nudge. Over
+    /// the wash the same green is a much bigger move, and at full strength a
+    /// hovered card sinks back to nearly the canvas tone — undoing the
+    /// contrast the wash exists to create. Call sites keep their numbers.
+    private let emphasisScale: Double = 0.6
 
     func body(content: Content) -> some View {
         let r = radius ?? theme.radiusCard
@@ -43,9 +52,14 @@ struct DSGlassSurface: ViewModifier {
                 shape
                     .fill(theme.material)
                     .overlay {
+                        // White first, then the green. The wash is what lifts
+                        // the card off a canvas of the same hue.
+                        shape.fill(theme.surfaceWash.opacity(theme.surfaceWashOpacity))
+                    }
+                    .overlay {
                         shape.fill(
                             theme.glassTint
-                                .opacity(theme.glassTintOpacity + emphasis)
+                                .opacity(theme.surfaceTintOpacity + emphasis * emphasisScale)
                         )
                     }
                     .overlay {
@@ -67,8 +81,8 @@ struct DSGlassSurface: ViewModifier {
                             LinearGradient(
                                 colors: [
                                     theme.specular.opacity(theme.specularOpacity),
-                                    theme.hairline.opacity(0.16),
-                                    theme.hairline.opacity(0.26)
+                                    theme.hairline.opacity(0.22),
+                                    theme.hairline.opacity(0.34)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
