@@ -95,9 +95,16 @@ final class DashboardModel: ObservableObject {
     @Published var lastAnalysis: LastAnalysis? = LastAnalysis.load()
 
     /// DSSegmentedControl binds to an index; the rest of the app wants the enum.
+    ///
+    /// Indexes into the *visible* tabs rather than using `rawValue`, which
+    /// would misalign the moment a tab is hidden: with Team off, Settings is
+    /// still case 4 but it is segment 3, so `rawValue` would select nothing.
     var sectionIndex: Int {
-        get { section.rawValue }
-        set { section = DashboardSection(rawValue: newValue) ?? .today }
+        get { DashboardSection.visible.firstIndex(of: section) ?? 0 }
+        set {
+            let tabs = DashboardSection.visible
+            section = tabs.indices.contains(newValue) ? tabs[newValue] : .today
+        }
     }
 
 
@@ -385,13 +392,13 @@ struct ContentView: View {
 
                 DSToolbarRow {
                     DSSegmentedControl(
-                        options: DashboardSection.allCases.map(\.title),
+                        options: DashboardSection.visible.map(\.title),
                         selection: $model.sectionIndex
                     )
                     // Derived, not fixed: segments split the width evenly, so a
                     // hard cap silently truncates the longest label the moment a
                     // tab is added. 94pt fits "Suggestions" at 12pt semibold.
-                    .frame(maxWidth: CGFloat(DashboardSection.allCases.count) * 94)
+                    .frame(maxWidth: CGFloat(DashboardSection.visible.count) * 94)
                     Spacer(minLength: 0)
                 }
 
@@ -400,7 +407,7 @@ struct ContentView: View {
                     case .today:       TodayView()
                     case .workflows:   WorkflowsView()
                     case .suggestions: SuggestionsView()
-                    case .team:        TeamView()
+                    case .team:        if Config.sharingEnabled { TeamView() }
                     case .settings:    SettingsView()
                     }
                 }
@@ -437,6 +444,13 @@ struct ContentView: View {
 enum DashboardSection: Int, CaseIterable, Identifiable {
     case today, workflows, suggestions, team, settings
     var id: Int { rawValue }
+
+    /// The tabs actually shown. Team sits behind `Config.sharingEnabled`.
+    /// This is the one place that decides, so the segmented control and
+    /// `sectionIndex` can never disagree about how many tabs there are.
+    static var visible: [DashboardSection] {
+        allCases.filter { $0 != .team || Config.sharingEnabled }
+    }
 
     var title: String {
         switch self {
