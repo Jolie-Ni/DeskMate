@@ -1,188 +1,82 @@
-# DeskMate
+# Deskmate
 
-A macOS app that quietly watches how you actually work, then tells you which parts of it could be handed to an AI.
+**A forward deployed engineer, running on your laptop.**
 
-It runs a background daemon that samples your screen every 30 seconds, OCRs it on-device, and stores the result in a local SQLite database. When you ask for it, a dashboard clusters those samples into work sessions, sends *text digests only* to the Claude API, and surfaces suggestions like "you LinkedIn-search every prospect before a sales call — here's a workflow that does it for you."
+Deskmate watches how you actually work for a week, then tells you which parts should be a machine's job.
 
-Nothing is analyzed until you press the button. No screenshots ever leave your machine.
+<!-- Add docs/dashboard.png and uncomment. Left commented out so the README does
+     not render a broken image in the meantime.
+![Deskmate dashboard](docs/dashboard.png)
+-->
 
-## Run
+---
 
-macOS 14 or later, a Swift 5.9+ toolchain (Xcode 15+ or Command Line Tools),
-and an Anthropic API key — the key is for analysis only, capture works without
-one.
+## Why this exists
 
-**1. Build.** Both binaries have to land in the same directory, because the
-dashboard looks for the daemon next to itself:
+I spent months as a forward deployed engineer, sitting inside companies and building AI into their workflows. The builds worked. Adoption still failed.
 
-```sh
+It did not fail because the models were not good enough. It failed because nobody in the building could answer a simple question: **which twenty minutes of your day should a machine be doing?** The executive could not say. The people doing the work could not say, because the work was invisible even to them. So we automated whatever was easiest to describe in a meeting, and then nobody counted whether it got used.
+
+Deskmate is the tool I kept wishing existed. It answers the question from evidence instead of from a workshop.
+
+---
+
+## Try it out
+
+Deskmate is an open-source native macOS app that lives locally on your own laptop. **You own your own data**. Nothing leaves your laptop without your permission. 
+
+```bash
+git clone https://github.com/Jolie-Ni/DeskMate
+cd DeskMate
 swift build -c release
-```
 
-**2. Set your API key.** The dashboard reads it from the environment *at
-launch*, so it has to be exported in the same shell you start it from — setting
-it afterwards does nothing until you relaunch. Put it in your shell profile if
-you would rather not think about it again:
-
-```sh
-export ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Launched from Finder the dashboard never sees a key, and *Analyze* will tell
-you so. Capture and everything already collected still work fine.
-
-**3. Open the dashboard.** That is the whole thing — there is no separate
-daemon to run:
-
-```sh
+export ANTHROPIC_API_KEY=sk-ant-...   # analysis only; capture works without it
 .build/release/DeskMateDashboard
 ```
 
-**4. Press Start**, top right. The dashboard spawns `DeskMateDaemon` for you
-and shows a red dot while it runs; **Stop** ends it.
+Press **Start**, top right. That spawns the capture daemon; **Stop** ends it. Closing the window does not stop recording — stopping is meant to be a deliberate act.
 
-**5. Grant permissions.** macOS will prompt on first capture. Whatever you miss,
-the daemon reports at startup in
-`~/Library/Application Support/DeskMate/daemon.log`:
+Requires **macOS 14 or later** and a **Swift 5.9+ toolchain** (Xcode 15+ or the Command Line Tools). macOS prompts for Screen Recording on first capture, and for Accessibility if you want window titles. Grant them in System Settings → Privacy & Security, then Stop and Start again.
 
-```
-[deskmate] permissions:
-  Screen Recording: ✅
-  Accessibility:    ❌
-```
+Let it run for three or four working days before you look at the dashboard. The detector will not propose a procedure it has only seen on one day, so fewer than two days of data produces nothing at all.
 
-| Permission | Used for |
-|---|---|
-| Screen Recording | screenshots |
-| Accessibility | frontmost window title |
-| Automation | browser URL via AppleScript — prompted on first use |
+---
 
-Grant what is missing in **System Settings → Privacy & Security**, then Stop and
-Start again. The grant attaches to the binary that asked for it, so it may need
-redoing after a rebuild that moves the binary.
+## What it does
 
-Then let it collect for a day or two before expecting suggestions — patterns
-need repetition to be visible.
+**The agent** It records the frontmost app, the window title and the browser URL, OCRs the screenshot on-device with Vision, redacts any personal informtion, and writes to a local database. The screenshot stays on disk and is deleted after 30 days.
 
-The daemon is deliberately not tied to the window's lifetime: closing the
-dashboard leaves recording running, because quitting a window you opened to
-read something should not silently stop collection. Stopping is an explicit act.
-If you move the binaries apart, point `DESKMATE_DAEMON_PATH` at the daemon.
+**The dashboard** reconstructs workflows out of those rows. It shows where the hours went and which apps and sites ate them, and which sequences you repeat often enough to be worth handing over. Each suggestion carries a confidence score and the step-by-step procedure it thinks you follow, so you can read it back and disagree with it.
 
-## How it works
-
-```
-DeskMateDaemon  ──►  ~/Library/Application Support/DeskMate/
-  every 30s            deskmate.sqlite      (captures, suggestions, workflows)
-  screenshot           screenshots/*.jpg    (local only, purged after 30 days)
-  + OCR + redact
-                              │
-                              ▼
-DeskMateDashboard  ──►  cluster into sessions  ──►  Claude API  ──►  suggestions
-  (SwiftUI, manual)       (local, no network)      (text digests only)
-```
-
-**Capture loop** (`DeskMateDaemon`) — every 30 seconds, if you're not idle, it grabs the frontmost app name, window title, browser URL (via AppleScript), and a screenshot. Vision framework OCRs the image locally, a regex pass redacts secrets, and the row lands in SQLite.
-
-**Analysis** (`DeskMateAnalyzer`) — runs only when you click *Analyze* in the dashboard. Captures from the last 7 days are clustered locally into sessions (same app/host, gaps under 5 minutes, sessions shorter than 60s dropped). Session digests go to Claude in two passes: Haiku labels each session in batches of 12, then Opus reads the labeled timeline and proposes workflows.
-
-**Dashboard** (`DeskMateDashboard`) — four tabs. *Today* shows where your time went, *Workflows* holds the procedures you kept, *Suggestions* lists what Claude proposed (keep or dismiss), *Team* joins a shared hub and shows which workflows you have shared to it, and *Settings* switches off anything the app does on its own.
+**What I actually want it to do, and it does not yet:** once you turn a suggestion into an automation, count how often that automation really runs. That number is the only honest measure of whether an AI rollout worked, and almost no company has it. It is the reason this repo exists, and it is not built. Deskmate today reconstructs the work and proposes the automation; the counting is the next thing I am writing.
 
 ## Privacy
 
-This tool sees everything on your screen, so the defaults are deliberately conservative:
+This is a tool that watches your screen. You should be suspicious of it. Here is everything, plainly:
 
-- **Screenshots never leave the machine.** Only text digests — app name, URL host and paths, window titles, and a ~200 character redacted OCR snippet per session — are sent to the Claude API.
-- **Analysis is manual** — except the nightly summary, if you enable it. The daemon never calls out to the network. Nothing is sent until you click *Analyze*, or until the scheduled summary runs (see Daily summary below), which sends a sample of screen text to Claude every night and writes the result to Google Drive.
-- **Apps are excluded by bundle ID** — 1Password, Keychain Access, and the login window are skipped entirely (`Sources/DeskMateCore/Config.swift`).
-- **URLs are excluded by host fragment** — anything containing `bank`, `chase.com`, `wellsfargo.com`, or `1password.com` is dropped before capture.
-- **OCR text is redacted** before it's written to disk: emails, card numbers, SSNs, `password:`/`api_key:` lines, `sk-` keys, and long hex tokens.
-- **Captures and screenshots are purged after 30 days**, checked once per day by the daemon.
+- **The capture path never touches the network.** 
+- **There is no telemetry.** Nothing reports back to the developer. Everything is hosted locally. 
+- **Your data is one file**, at `~/Library/Application Support/DeskMate/deskmate.sqlite`, with the screenshots beside it in `screenshots/`. Open it with any SQLite browser. Delete the lot with `rm -rf ~/Library/Application\ Support/DeskMate`.
+- **Personal info gets redacted.** Things like email addresses, 13–16 digit card numbers, US SSNs, `password:` and `api_key:` lines, `sk-` API keys, and hex tokens of 32 characters or more.
+- **What does leave the machine, and only when you ask for it:** clicking *Analyze* sends text digests to the Claude API: app names, URL hosts and paths, window titles, and a roughly 200 character redacted OCR snippet per session.
 
-Redaction is regex-based and best-effort — it is not a guarantee. If an app shows something you'd rather never be captured, add its bundle ID to `excludedBundleIDs`.
+## Current limitations
 
-To wipe everything:
+- **macOS only**
+- **No installer.** You need a Swift toolchain and you build from source.
+- **Adoption counting does not exist.** 
+- **Analysis is not continuous.** Suggestions are only as good as the last time you pressed *Analyze*. Nothing re-runs on its own.
 
-```sh
-rm -rf ~/Library/Application\ Support/DeskMate
-```
+## Where it is going
 
-## Daily summary
+**computer use**, so a saved workflow can run instead of only being described; **agent count**, so we keep track of how many agents users created and running; 
 
-An optional nightly job writes an activity file for a newsletter, a journal, or
-anything else that wants context about the week.
+If you have run this for a week and it told you something true, I would like to hear about it. Open an issue, or write to me at jolieni@hconsult.ai.
 
-```sh
-swift build -c release
-cp scripts/com.hconsult.deskmate.summary.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.hconsult.deskmate.summary.plist
-```
+## Documentation
 
-It runs at 23:59 and writes
-`<Google Drive>/My Drive/top_of_your_mind/activity/YYYY-MM-DD-activity.md`,
-one file per day, each holding three windows: the day itself, the last 7 days
-and the last 30 days. Every window gets an hours-and-apps breakdown computed
-locally, plus a few paragraphs of prose written by Claude from the screen text
-of that window.
+[`docs/reference.md`](docs/reference.md) has the build details, the analysis pipeline stage by stage, every tunable and environment variable, and the test harness. The team hub has [its own README](server/README.md).
 
-**This sends data off the machine, on a schedule, without you pressing
-anything.** A sample of OCR text goes to the Claude API each night, and the
-resulting summary syncs to Google Drive, where it is as private as that Drive
-folder is. The summaries name real projects, documents and people, because a
-vague one would be useless. If that is not what you want, do not load the job —
-nothing else in the app behaves this way.
+## License
 
-The prose needs an API key, which launchd will not inherit from your shell:
-
-```sh
-printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" \
-  > ~/Library/Application\ Support/DeskMate/summary.env
-chmod 600 ~/Library/Application\ Support/DeskMate/summary.env
-```
-
-Without it the job still runs and still writes the file, minus the prose.
-
-**Turning it off.** The *Settings* tab has a switch for it. That writes
-`settings.json` next to the database, which the summary binary reads before it
-does anything — a file rather than `UserDefaults`, because defaults are scoped
-per executable and the dashboard and the summary are separate binaries. The
-scheduled job still fires and exits without writing; `launchctl unload` removes
-it entirely.
-
-Run it by hand any time with `./scripts/daily-summary.sh`, override the
-destination with `--dir`, skip the model call with `--no-narrative`, and ignore
-the off switch with `--force`.
-Output goes to `~/Library/Logs/deskmate-summary.log`.
-
-If the Mac is asleep at 23:59, launchd runs the job on wake rather than skipping
-the day, and the job notices it is late: past midday it summarises the current
-day, before midday it summarises the day before. The file is named for the day
-it describes, not the moment it ran.
-
-## Layout
-
-| Target | What's in it |
-|---|---|
-| `DeskMateCore` | `Config` (intervals, paths, exclusions), GRDB `Storage` + migrations, `Capture` / `Workflow` models, Vision OCR, redaction, daemon control, team account and hub client |
-| `DeskMateDaemon` | capture loop, screenshot, idle detection, browser URL, permission check |
-| `DeskMateAnalyzer` | session clustering, Anthropic Messages API client, Haiku labeling, Opus pattern detection, automation planning |
-| `DeskMateDashboard` | SwiftUI app — Today, Workflows, Suggestions, Team, Settings |
-| `DeskMateFixture` | test harness: fixture runs, comparator checks, sharing checks, hub round trips |
-| `DeskMateSummary` | the nightly activity summary that the launchd job runs |
-| `server/` | the team hub — FastAPI over Postgres, deployed separately ([its own README](server/README.md)) |
-
-## Configuration
-
-There is no config file yet. Tunables live in `Sources/DeskMateCore/Config.swift`:
-
-| Setting | Default |
-|---|---|
-| `captureIntervalSeconds` | 30 |
-| `idleThresholdSeconds` | 120 |
-| `retentionDays` | 30 |
-| `screenshotMaxDimension` | 1920 |
-| `jpegQuality` | 0.5 |
-| `excludedBundleIDs` | 1Password, Keychain Access, login window |
-| `excludedURLHostFragments` | `bank`, `chase.com`, `wellsfargo.com`, `1password.com` |
-
-Analysis lookback (7 days), session gap (5 min), and labeling batch size (12) are currently constructor defaults in `AnalysisRunner`, `SessionClusterer`, and `LabelingService`.
+MIT. See [LICENSE](LICENSE).
