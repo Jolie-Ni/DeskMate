@@ -8,6 +8,13 @@ Deskmate watches how you actually work for a week, then tells you which parts sh
      not render a broken image in the meantime.
 ![Deskmate dashboard](docs/dashboard.png)
 -->
+<img width="1185" height="778" alt="image" src="https://github.com/user-attachments/assets/943121b4-e8e2-4468-a07a-8e36eddd19dd" />
+
+<img width="1181" height="805" alt="image" src="https://github.com/user-attachments/assets/39611f6e-b543-42c1-b14f-8b2e4cbf2473" />
+
+<img width="895" height="600" alt="image" src="https://github.com/user-attachments/assets/022b3958-f8c4-469d-99b5-3c57c8fbca4d" />
+
+
 
 ---
 
