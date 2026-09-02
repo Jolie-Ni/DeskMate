@@ -115,6 +115,9 @@ final class DashboardModel: ObservableObject {
     private let storage: Storage?
     private let stats: DashboardStats?
     private var statusPoll: Task<Void, Never>?
+    /// When the last query ran, so a foreground refresh can tell a genuine
+    /// return to the app from a duplicate of a reload that just happened.
+    private var lastReloadAt: Date?
 
     var isRecording: Bool { daemonStatus != nil }
 
@@ -215,6 +218,7 @@ final class DashboardModel: ObservableObject {
 
     func reload() {
         guard let storage = storage, let stats = stats else { return }
+        lastReloadAt = Date()
         let since = range.startDate
         do {
             slices = try stats.activitySlices(since: since)
@@ -226,6 +230,21 @@ final class DashboardModel: ObservableObject {
         } catch {
             loadError = "Query failed: \(error.localizedDescription)"
         }
+    }
+
+    /// Coming back to the window is the moment you look at the numbers again,
+    /// and the moment they're most likely to be wrong: the recorder is a
+    /// separate process that kept writing to the database the whole time
+    /// DeskMate was in the background. Refreshing here is what makes the manual
+    /// refresh button an escape hatch rather than a step you have to remember.
+    ///
+    /// Throttled because macOS activates the app on every return to it,
+    /// including a flick to another window and straight back — and at launch it
+    /// arrives alongside the view's own `onAppear`, which would otherwise walk
+    /// every capture since midnight twice in the same frame.
+    func reloadOnForeground() {
+        if let last = lastReloadAt, Date().timeIntervalSince(last) < 1 { return }
+        reload()
     }
 
     func runAnalysis() async {
@@ -434,6 +453,12 @@ struct ContentView: View {
             }
         }
         .onAppear { model.reload(); model.startPollingDaemon() }
+        // App activation, not window focus: `scenePhase` on macOS tracks the
+        // window, so it stays `.active` while you work in another app and never
+        // tells us you've come back.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.reloadOnForeground()
+        }
         .overlay(alignment: .bottom) {
             if let err = model.recorderError {
                 DSBanner(
