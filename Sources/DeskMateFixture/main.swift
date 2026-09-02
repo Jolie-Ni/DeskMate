@@ -103,6 +103,18 @@ func source(in observation: String?, among sources: [String], previous: String?)
 
 // MARK: - Main
 
+/// Every async subcommand fails the same way — print it and stop — so the
+/// reporting lives here instead of being retyped in each branch.
+func runBlockingOrExit(_ body: @escaping @Sendable () async throws -> Void) {
+    do {
+        try runBlocking(body)
+    } catch {
+        FileHandle.standardError.write(
+            "error: \(error.localizedDescription)\n".data(using: .utf8)!)
+        exit(1)
+    }
+}
+
 let args = CommandLine.arguments
 if args.count == 3, args[1] == "verify" {
     try Verify.run(dbPath: args[2])
@@ -110,14 +122,7 @@ if args.count == 3, args[1] == "verify" {
 }
 if args.count >= 2, args[1] == "capabilities" {
     if args.count > 2, args[2] == "check" {
-        let sem = DispatchSemaphore(value: 0)
-        var failure: Error?
-        Task {
-            do { try await CapabilitiesReport.versionCheck() } catch { failure = error }
-            sem.signal()
-        }
-        sem.wait()
-        if let failure { FileHandle.standardError.write("error: \(failure.localizedDescription)\n".data(using: .utf8)!); exit(1) }
+        runBlockingOrExit { try await CapabilitiesReport.versionCheck() }
     } else {
         CapabilitiesReport.run()
     }
@@ -125,14 +130,7 @@ if args.count >= 2, args[1] == "capabilities" {
 }
 if args.count >= 2, args[1] == "connectors" {
     let db = args.count > 2 ? args[2] : nil
-    let sem = DispatchSemaphore(value: 0)
-    var failure: Error?
-    Task {
-        do { try await Connectors.refresh(force: true, dbPath: db) } catch { failure = error }
-        sem.signal()
-    }
-    sem.wait()
-    if let failure { FileHandle.standardError.write("error: \(failure.localizedDescription)\n".data(using: .utf8)!); exit(1) }
+    runBlockingOrExit { try await Connectors.refresh(force: true, dbPath: db) }
     exit(0)
 }
 if args.count >= 3, args[1] == "share-preview" {
@@ -141,24 +139,17 @@ if args.count >= 3, args[1] == "share-preview" {
     exit(0)
 }
 if args.count >= 2, args[1] == "team" {
-    let sem = DispatchSemaphore(value: 0)
-    var failure: Error?
-    Task {
-        do {
-            switch Array(args.dropFirst(2)) {
-            case ["status"]:                       TeamCheck.status()
-            case ["disconnect"]:                   TeamCheck.disconnect()
-            case ["share-demo"]:                   try await TeamCheck.shareDemo()
-            case let a where a.count == 4 && a[0] == "enroll":
-                try await TeamCheck.enroll(code: a[1], email: a[2], name: a[3])
-            default:
-                print("usage: team enroll <code> <email> <name> | team status | team disconnect")
-            }
-        } catch { failure = error }
-        sem.signal()
+    runBlockingOrExit {
+        switch Array(args.dropFirst(2)) {
+        case ["status"]:                       TeamCheck.status()
+        case ["disconnect"]:                   TeamCheck.disconnect()
+        case ["share-demo"]:                   try await TeamCheck.shareDemo()
+        case let a where a.count == 4 && a[0] == "enroll":
+            try await TeamCheck.enroll(code: a[1], email: a[2], name: a[3])
+        default:
+            print("usage: team enroll <code> <email> <name> | team status | team disconnect")
+        }
     }
-    sem.wait()
-    if let failure { FileHandle.standardError.write("error: \(failure.localizedDescription)\n".data(using: .utf8)!); exit(1) }
     exit(0)
 }
 if args.count == 2, args[1] == "sharing-check" {
@@ -189,15 +180,7 @@ if args.count == 4, args[1] == "score" {
 }
 if args.count >= 3, args[1] == "analyze" {
     let days = args.count > 3 ? Int(args[3]) ?? 7 : 7
-    let sem = DispatchSemaphore(value: 0)
-    var failure: Error?
-    Task {
-        do { try await RunAnalysis.run(dbPath: args[2], lookbackDays: days) }
-        catch { failure = error }
-        sem.signal()
-    }
-    sem.wait()
-    if let failure { FileHandle.standardError.write("error: \(failure.localizedDescription)\n".data(using: .utf8)!); exit(1) }
+    runBlockingOrExit { try await RunAnalysis.run(dbPath: args[2], lookbackDays: days) }
     exit(0)
 }
 guard args.count == 3 else {

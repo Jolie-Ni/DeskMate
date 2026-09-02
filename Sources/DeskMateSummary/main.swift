@@ -37,19 +37,13 @@ if !AppSettings.load().dailySummaryEnabled && !args.contains("--force") {
     exit(0)
 }
 
-let sem = DispatchSemaphore(value: 0)
-var failure: Error?
-Task {
-    do {
+do {
+    try runBlocking {
         try await ActivitySummary.run(directory: value("--dir"),
                                       outputPath: value("--out"),
                                       narrator: narrator)
-    } catch { failure = error }
-    sem.signal()
-}
-sem.wait()
-
-if let failure {
-    FileHandle.standardError.write("summary failed: \(failure)\n".data(using: .utf8)!)
+    }
+} catch {
+    FileHandle.standardError.write("summary failed: \(error)\n".data(using: .utf8)!)
     exit(1)
 }
