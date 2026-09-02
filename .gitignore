@@ -34,3 +34,6 @@ __pycache__/
 
 # Worktrees created by Claude Code sessions
 .claude/worktrees/
+
+# Packaged builds
+dist/

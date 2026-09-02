@@ -17,17 +17,31 @@ dashboard looks for the daemon next to itself:
 swift build -c release
 ```
 
-**2. Set your API key.** The dashboard reads it from the environment *at
-launch*, so it has to be exported in the same shell you start it from — setting
-it afterwards does nothing until you relaunch. Put it in your shell profile if
-you would rather not think about it again:
+**2. Set your API key.** The first launch asks for one and verifies it against
+the Messages API before saving, so a mistyped key fails there rather than an
+hour later at *Analyze*. It lands in `~/Library/Application Support/DeskMate/api-key`
+at mode `0600`, and *Settings* can replace or remove it afterwards.
+
+Skipping is fine. Capture never touches the network; only *Analyze* and the
+nightly summary need a key.
+
+A shell export still wins over the saved file, which keeps CLI and test runs
+behaving as they always did:
 
 ```sh
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Launched from Finder the dashboard never sees a key, and *Analyze* will tell
-you so. Capture and everything already collected still work fine.
+That precedence is why *Settings* says so plainly when the environment supplies
+a key — editing the saved one would otherwise look like it worked and change
+nothing.
+
+**Why a file and not the Keychain.** Keychain ACLs key off each binary's code
+signature. A key written by the dashboard would make `DeskMateSummary` raise an
+"allow access?" dialog when the 23:59 launchd job tried to read it, and nobody
+is awake to answer. The file also sits beside `deskmate.sqlite`, which holds
+OCR'd text from your screen — anything that can read the key can already read
+worse.
 
 **3. Open the dashboard.** That is the whole thing — there is no separate
 daemon to run:
@@ -113,11 +127,30 @@ rm -rf ~/Library/Application\ Support/DeskMate
 An optional nightly job writes an activity file for a newsletter, a journal, or
 anything else that wants context about the week.
 
-```sh
-swift build -c release
-cp scripts/com.hconsult.deskmate.summary.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.hconsult.deskmate.summary.plist
-```
+**Settings → Daily activity summary → Install** is the way in. It writes
+`~/Library/LaunchAgents/com.hconsult.deskmate.summary.plist` pointing at the
+`DeskMateSummary` binary sitting beside the app you clicked it in, then
+bootstraps it into your GUI domain so it is live without a logout. *Remove*
+boots it out and deletes the plist.
+
+The plist is generated rather than checked in. A checked-in one has to name an
+absolute path, and that path is only ever correct on the machine of whoever
+wrote it — the one this repo used to carry pointed into its author's home
+directory, which made the feature unreachable for everybody else. An app
+installed from the DMG has no source checkout to point at at all.
+
+The job runs the binary directly with no shell in between. The only thing the
+old `daily-summary.sh` wrapper did that mattered was find an API key in an
+environment launchd does not provide, and `APIKeyStore` now answers that for
+every binary without an environment at all. The script is still there for
+running a summary by hand.
+
+Settings also notices a plist left behind by a copy of DeskMate that has since
+been moved or deleted — the failure where the job is "installed" and silently
+does nothing every night — and offers to repair it.
+
+`DeskMateFixture summaryjob-check` exercises the whole cycle against a throwaway
+label, so it never touches the job you actually have installed.
 
 It runs at 23:59 and writes
 `<Google Drive>/My Drive/top_of_your_mind/activity/YYYY-MM-DD-activity.md`,
@@ -133,7 +166,10 @@ folder is. The summaries name real projects, documents and people, because a
 vague one would be useless. If that is not what you want, do not load the job —
 nothing else in the app behaves this way.
 
-The prose needs an API key, which launchd will not inherit from your shell:
+The prose needs an API key, which launchd will not inherit from your shell. A
+key saved in the app is enough — `DeskMateSummary` reads the same
+`api-key` file the dashboard writes. `summary.env` still works and still wins,
+for anyone who set it up before the app could hold a key:
 
 ```sh
 printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" \
@@ -141,7 +177,7 @@ printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" \
 chmod 600 ~/Library/Application\ Support/DeskMate/summary.env
 ```
 
-Without it the job still runs and still writes the file, minus the prose.
+With neither, the job still runs and still writes the file, minus the prose.
 
 **Turning it off.** The *Settings* tab has a switch for it. That writes
 `settings.json` next to the database, which the summary binary reads before it
@@ -201,14 +237,15 @@ half-written MP3.
 
 | Target | What's in it |
 |---|---|
-| `DeskMateCore` | `Config` (intervals, paths, exclusions), GRDB `Storage` + migrations, `Capture` / `Workflow` models, Vision OCR, redaction, daemon control, team account and hub client |
+| `DeskMateCore` | `Config` (intervals, paths, exclusions), GRDB `Storage` + migrations, `Capture` / `Workflow` models, Vision OCR, redaction, daemon control, `APIKeyStore`, `SummaryJob`, team account and hub client |
 | `DeskMateDaemon` | capture loop, screenshot, idle detection, browser URL, permission check |
 | `DeskMateAnalyzer` | session clustering, Anthropic Messages API client, Haiku labeling, Opus pattern detection, automation planning |
 | `DeskMateDashboard` | SwiftUI app — Today, Workflows, Suggestions, Settings (+ Team, behind `Config.sharingEnabled`) — over the Celadon design system in `DesignSystem/` (tokens, primitives, components, catalog) |
 | `DeskMateFixture` | test harness: fixture runs, comparator checks, sharing checks, hub round trips (see below) |
 | `DeskMateSummary` | the nightly activity summary that the launchd job runs |
 | `server/` | the team hub — FastAPI over Postgres, deployed separately ([its own README](server/README.md)) |
-| `scripts/` | `daily-summary.sh` and the launchd plist that runs it |
+| `scripts/` | `package.sh` (see [Packaging](#packaging)) and `daily-summary.sh`, the latter kept only for running a summary by hand — Settings → Install is what schedules one |
+| `packaging/` | `Info.plist`, entitlements, `make-icon.swift` and the generated `.icns`, and the Homebrew cask |
 | `newsletter_voice.py` | standalone: turns a finished brief into an MP3 (OpenAI TTS) |
 
 ## Test harness
@@ -233,6 +270,8 @@ reconstruct, and leaking it would make the test pass for the wrong reason.
 | `sharing-check` | exercises the sharing state machine and the soft-delete guarantee on a throwaway database |
 | `cross-person` | what `WorkflowComparator` does when several people run "the same" procedure slightly differently |
 | `sanitize-check` | the tools sanitiser, against a real leak and against entries it must not eat |
+| `summaryjob-check` | writes, bootstraps, reads back and boots out the nightly launchd agent, under a throwaway label so the real job is untouched |
+| `keystore-check` | the API key store: round trip, whitespace trimming, and that the file is `0600` and stays `0600`. Refuses to run without `DESKMATE_STORAGE_DIR`, since it writes and deletes the real key file |
 | `team enroll <code> <email> <name>` / `team status` / `team disconnect` | hub round trips against a real server |
 | `capabilities` / `capabilities check` | print the bundled capability catalog, or check it against the live one |
 | `connectors [db]` | force a refresh of the Claude connector directory (**network**) |
@@ -240,6 +279,93 @@ reconstruct, and leaking it would make the test pass for the wrong reason.
 `DESKMATE_STORAGE_DIR` points these at a scratch directory. Use it — `analyze`
 writes suggestions, and neither it nor the fixture builder belongs anywhere
 near the database you actually collect into.
+
+## Packaging
+
+`./scripts/package.sh` builds `dist/DeskMate.app` and wraps it in
+`dist/DeskMate-<version>.dmg`. Version comes from the latest git tag,
+`CFBundleVersion` from the commit count.
+
+All three executables — dashboard, daemon and summary — go into
+`Contents/MacOS/` together. That is not tidiness; `DaemonControl` finds the
+recorder as a *sibling* of whoever is asking, so moving the daemon into a
+`Helpers/` folder would break Start. SwiftPM resource bundles go into
+`Contents/Resources/`, where `Bundle.module` looks first.
+
+Builds are universal (arm64 + x86_64) when full Xcode is installed, because
+SwiftPM's multi-arch path runs through xcbuild, which the Command Line Tools do
+not ship. With CLT only the script builds native and says so — CI has Xcode, and
+the DMG that reaches users comes from there; a local one is for testing the
+packaging.
+
+`packaging/make-icon.swift` draws the icon from code against the Celadon
+palette, so the `.icns` cannot drift from `DSTheme`. Re-run it after a palette
+change:
+
+```sh
+swift packaging/make-icon.swift packaging/DeskMate.icns
+```
+
+### Signing
+
+With no environment set the script ad-hoc signs. That ships something real
+today, and it is what CI produces until an Apple Developer membership exists:
+
+```sh
+./scripts/package.sh
+```
+
+With a Developer ID certificate it signs properly, applies the hardened
+runtime, notarizes and staples — same script, two variables:
+
+```sh
+xcrun notarytool store-credentials deskmate \
+  --apple-id you@example.com --team-id TEAMID --password xxxx-xxxx-xxxx-xxxx
+
+DESKMATE_SIGN_ID="Developer ID Application: Name (TEAMID)" \
+DESKMATE_NOTARY_PROFILE=deskmate \
+./scripts/package.sh
+```
+
+`packaging/DeskMate.entitlements` carries
+`com.apple.security.automation.apple-events`. The hardened runtime blocks Apple
+events outright without it, which would silently kill browser URL capture in
+every notarized build while leaving ad-hoc builds working — the worst kind of
+bug to find after release.
+
+Signing runs inside out: nested bundles, then each executable, then the app.
+Signing the app first and its contents second invalidates the outer signature,
+and `codesign` does not say so. Only bundles carrying an `Info.plist` are signed
+— SwiftPM emits resource-only bundles as a flat directory, which `codesign`
+rejects as "bundle format unrecognized"; those are sealed by the app's own
+resource envelope instead.
+
+### What users see
+
+An unnotarized download opens with *"DeskMate is damaged and can't be opened"* —
+Gatekeeper's wording for unsigned, not a corrupt file. macOS 15 removed the
+Control-click → Open bypass, so the way through is **System Settings → Privacy &
+Security → Open Anyway**, once.
+
+Homebrew does not sidestep this by itself: `quarantine: true` is the default in
+Homebrew's own installer, so a plain `brew install --cask` hits the same wall.
+`--no-quarantine` is what skips it, and Homebrew prints a warning saying so.
+That still beats the DMG — one flag instead of a trip through System Settings —
+but it is a flag the user has to type, not something the cask can declare.
+
+`packaging/homebrew/deskmate.rb` is the cask; it belongs in
+`Jolie-Ni/homebrew-tap/Casks/`, and lives here so the version and checksum are
+updated by the same commit as the build that produced them.
+
+One consequence worth knowing: TCC grants for an ad-hoc signature are keyed to
+the binary's cdhash, so **Screen Recording has to be re-granted after every
+update**. A real Developer ID signature is stable across versions and the grant
+survives. That, more than the "damaged" dialog, is the argument for paying
+Apple.
+
+`.github/workflows/release.yml` runs the same script on a `v*` tag and attaches
+the DMG to the release. It notarizes only when the signing secrets are present,
+so it works unchanged before and after enrolment.
 
 ## Configuration
 
@@ -296,7 +422,7 @@ a run at the old host with
 
 | Variable | Effect |
 |---|---|
-| `ANTHROPIC_API_KEY` | Required for analysis and for the nightly prose. Capture works without it. Read at launch — export it before starting the dashboard. |
+| `ANTHROPIC_API_KEY` | Analysis and the nightly prose. Capture works without it. Takes precedence over the key saved in the app; unset or empty falls through to `~/Library/Application Support/DeskMate/api-key`. |
 | `DESKMATE_STORAGE_DIR` | Moves the database, screenshots and settings somewhere else. What keeps test tooling out of the database you actually use. |
 | `DESKMATE_DAEMON_PATH` | Where the dashboard looks for `DeskMateDaemon`, if you moved the binaries apart. |
 | `DESKMATE_HUB_URL` | Overrides `Config.hubURL` for one run. |

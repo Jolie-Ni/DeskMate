@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>DeskMate</string>
+	<key>CFBundleDisplayName</key>
+	<string>DeskMate</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.hconsult.deskmate</string>
+	<key>CFBundleExecutable</key>
+	<string>DeskMateDashboard</string>
+	<key>CFBundleIconFile</key>
+	<string>DeskMate</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>__SHORT_VERSION__</string>
+	<key>CFBundleVersion</key>
+	<string>__BUILD_VERSION__</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>MIT licensed. https://github.com/Jolie-Ni/DeskMate</string>
+	<!-- Screen Recording and Accessibility have no Info.plist usage string on
+	     macOS; the system composes those prompts itself. Apple events do need
+	     one, and it is what the user sees when the daemon first asks a browser
+	     for the frontmost tab's URL. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>DeskMate reads the URL of the frontmost browser tab so it can tell which sites your work happens on. The URL stays on this machine.</string>
+</dict>
+</plist>

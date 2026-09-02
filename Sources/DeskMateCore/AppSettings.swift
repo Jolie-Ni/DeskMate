@@ -47,17 +47,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
 
     // MARK: Scheduled job
 
-    public static let launchAgentLabel = "com.hconsult.deskmate.summary"
-
-    /// Whether the launchd plist is installed. Presence of the file, not a
-    /// `launchctl` call: shelling out from a GUI app to report a checkbox is a
-    /// lot of failure modes for one line of status text.
-    public static var summaryJobInstalled: Bool {
-        FileManager.default.fileExists(atPath:
-            FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/LaunchAgents")
-                .appendingPathComponent("\(launchAgentLabel).plist").path)
-    }
+    // Installing, removing and inspecting the launchd agent lives in
+    // `SummaryJob`. Kept out of here so there is one answer to "is it
+    // installed", rather than a copy in the type that owns the off switch.
 
     /// The most recent summary file and when it was written, if any.
     public static func lastSummary() -> (name: String, written: Date)? {

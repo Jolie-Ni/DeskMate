@@ -233,9 +233,9 @@ final class DashboardModel: ObservableObject {
             analysisState = .failed("Database not open.")
             return
         }
-        guard let apiKey = AnthropicClient.keyFromEnvironment() else {
+        guard let apiKey = AnthropicClient.resolvedKey() else {
             analysisState = .failed(
-                "ANTHROPIC_API_KEY is not set. Relaunch the dashboard from a shell where it's exported.")
+                "No Anthropic API key yet. Add one in Settings — analysis is the only thing that needs it.")
             return
         }
 
@@ -364,10 +364,16 @@ struct ContentView: View {
     /// CLI rather than living in the Xcode preview canvas.
     private static let designMode = ProcessInfo.processInfo.environment["DESKMATE_DESIGN_MODE"] == "1"
 
+    /// Read once at launch rather than computed, so saving a key swaps the
+    /// screen exactly when `onDone` fires instead of the moment the file lands.
+    @State private var needsSetup = SetupState.needsSetup
+
     var body: some View {
         Group {
             if Self.designMode {
                 DSCatalogView()
+            } else if needsSetup {
+                SetupView { needsSetup = false }
             } else {
                 dashboard
             }

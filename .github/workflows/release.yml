@@ -1,0 +1,97 @@
+# Builds the DMG on a tag and attaches it to the GitHub release.
+#
+# Signing is driven entirely by repository secrets. With none of them set the
+# job still succeeds and ships an ad-hoc signed DMG — the same artifact
+# `scripts/package.sh` produces locally. Add the secrets once an Apple Developer
+# membership comes through and this identical workflow starts notarizing, with
+# no edit here:
+#
+#   MACOS_CERTIFICATE           base64 of the Developer ID Application .p12
+#   MACOS_CERTIFICATE_PASSWORD  the password that .p12 was exported with
+#   MACOS_SIGN_IDENTITY         "Developer ID Application: Name (TEAMID)"
+#   MACOS_NOTARY_APPLE_ID       the Apple Account email
+#   MACOS_NOTARY_TEAM_ID        the 10-character team id
+#   MACOS_NOTARY_PASSWORD       an app-specific password from appleid.apple.com
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    # Pinned rather than macos-latest: the deployment target is macOS 14, and a
+    # runner upgrade silently changing the SDK is not something a release should
+    # discover for the first time in someone's Downloads folder.
+    runs-on: macos-14
+
+    # Hoisted to the job so the steps below can test them in `if:` — the
+    # `secrets` context is not available in a step-level condition, but `env` is.
+    env:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+      MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+      MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+      MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # package.sh reads `git describe` and `git rev-list --count`; a
+          # shallow clone gives it neither.
+          fetch-depth: 0
+
+      - name: Import the signing certificate
+        if: env.MACOS_CERTIFICATE != ''
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/build.keychain"
+          PASSWORD="$(uuidgen)"
+          security create-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          # Without this, codesign blocks on a GUI prompt no one can answer and
+          # the job hangs until it times out.
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Store notary credentials
+        if: env.MACOS_NOTARY_PASSWORD != ''
+        run: |
+          set -euo pipefail
+          xcrun notarytool store-credentials deskmate \
+            --apple-id "$MACOS_NOTARY_APPLE_ID" \
+            --team-id "$MACOS_NOTARY_TEAM_ID" \
+            --password "$MACOS_NOTARY_PASSWORD"
+
+      - name: Build the DMG
+        run: ./scripts/package.sh
+        env:
+          DESKMATE_SIGN_ID: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          # package.sh only notarizes when this is non-empty, so an unsigned
+          # build skips it rather than failing.
+          DESKMATE_NOTARY_PROFILE: ${{ secrets.MACOS_NOTARY_PASSWORD != '' && 'deskmate' || '' }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeskMate-dmg
+          path: dist/*.dmg
+
+      - name: Attach the DMG to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.dmg \
+            --title "DeskMate $GITHUB_REF_NAME" \
+            --generate-notes

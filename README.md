@@ -30,20 +30,34 @@ Deskmate is the tool I kept wishing existed. It answers the question from eviden
 
 ## Try it out
 
-Deskmate is an open-source native macOS app that lives locally on your own laptop. **You own your own data**. Nothing leaves your laptop without your permission. 
+Deskmate is an open-source native macOS app that lives locally on your own laptop. **You own your own data**. Nothing leaves your laptop without your permission.
+
+Builds are not notarized yet — Apple charges $99/year for the certificate that allows it, so macOS treats DeskMate as unsigned. That costs you one extra step, whichever way you install.
+
+**With Homebrew:**
+
+```bash
+brew install --cask --no-quarantine jolie-ni/tap/deskmate
+```
+
+`--no-quarantine` is doing real work there, and Homebrew will warn you about it: it skips the Gatekeeper check for this download. Read the source, or trust it as much as you trust any unsigned binary — which is the same question this whole app asks you to answer.
+
+**Or download the app**: grab `DeskMate.dmg` from [Releases](https://github.com/Jolie-Ni/DeskMate/releases), open it, and drag DeskMate to Applications. The first launch says *"DeskMate is damaged and can't be opened."* It is not damaged; that is Gatekeeper's wording for unsigned. Open it once via **System Settings → Privacy & Security → Open Anyway**, and it never asks again.
+
+On first launch DeskMate asks for your Anthropic API key and checks it against the API before saving. You can skip it — capture never touches the network and works with no key at all — and add one later in Settings.
+
+Then press **Start**, top right. That spawns the capture daemon; **Stop** ends it. Closing the window does not stop recording — stopping is meant to be a deliberate act.
+
+Requires **macOS 14 or later**. macOS prompts for Screen Recording on first capture, and for Accessibility if you want window titles. Grant them in System Settings → Privacy & Security, then Stop and Start again. The recorder asks under its own name, `DeskMateDaemon`, because it is a separate process from the window you are looking at.
+
+**Building from source** needs a **Swift 5.9+ toolchain** (Xcode 15+ or the Command Line Tools):
 
 ```bash
 git clone https://github.com/Jolie-Ni/DeskMate
 cd DeskMate
 swift build -c release
-
-export ANTHROPIC_API_KEY=sk-ant-...   # analysis only; capture works without it
-.build/release/DeskMateDashboard
+.build/release/DeskMateDashboard      # or ./scripts/package.sh to build the DMG
 ```
-
-Press **Start**, top right. That spawns the capture daemon; **Stop** ends it. Closing the window does not stop recording — stopping is meant to be a deliberate act.
-
-Requires **macOS 14 or later** and a **Swift 5.9+ toolchain** (Xcode 15+ or the Command Line Tools). macOS prompts for Screen Recording on first capture, and for Accessibility if you want window titles. Grant them in System Settings → Privacy & Security, then Stop and Start again.
 
 Let it run for three or four working days before you look at the dashboard. The detector will not propose a procedure it has only seen on one day, so fewer than two days of data produces nothing at all.
 
@@ -64,13 +78,14 @@ This is a tool that watches your screen. You should be suspicious of it. Here is
 - **The capture path never touches the network.** 
 - **There is no telemetry.** Nothing reports back to the developer. Everything is hosted locally. 
 - **Your data is one file**, at `~/Library/Application Support/DeskMate/deskmate.sqlite`, with the screenshots beside it in `screenshots/`. Open it with any SQLite browser. Delete the lot with `rm -rf ~/Library/Application\ Support/DeskMate`.
+- **Your API key is a `0600` file** in that same folder, at `api-key` — readable by your account and nobody else. Not the Keychain, because the nightly summary job runs unattended and Keychain access from a second binary would stop to ask a question at 23:59. `ANTHROPIC_API_KEY` still overrides it when set. Remove it from Settings, or with `rm ~/Library/Application\ Support/DeskMate/api-key`.
 - **Personal info gets redacted.** Things like email addresses, 13–16 digit card numbers, US SSNs, `password:` and `api_key:` lines, `sk-` API keys, and hex tokens of 32 characters or more.
 - **What does leave the machine, and only when you ask for it:** clicking *Analyze* sends text digests to the Claude API: app names, URL hosts and paths, window titles, and a roughly 200 character redacted OCR snippet per session.
 
 ## Current limitations
 
 - **macOS only**
-- **No installer.** You need a Swift toolchain and you build from source.
+- **Not notarized.** First launch needs a trip through System Settings → Privacy & Security, or a `--no-quarantine` install. Screen Recording also has to be re-granted after each update, because the permission is tied to an unsigned build's hash.
 - **Adoption counting does not exist.** 
 - **Analysis is not continuous.** Suggestions are only as good as the last time you pressed *Analyze*. Nothing re-runs on its own.
 

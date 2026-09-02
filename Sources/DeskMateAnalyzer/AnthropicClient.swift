@@ -1,3 +1,4 @@
+import DeskMateCore
 import Foundation
 
 public enum AnthropicError: Error, LocalizedError {
@@ -9,7 +10,7 @@ public enum AnthropicError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return "ANTHROPIC_API_KEY is not set."
+            return "No Anthropic API key. Add one in Settings, or export ANTHROPIC_API_KEY."
         case .http(let code, let body):
             return "Claude API HTTP \(code): \(body)"
         case .noTextBlock:
@@ -34,10 +35,28 @@ public struct AnthropicClient {
         self.session = URLSession(configuration: cfg)
     }
 
-    /// Read API key from env. Returns nil if unset.
-    public static func keyFromEnvironment() -> String? {
-        let key = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"]
-        return (key?.isEmpty ?? true) ? nil : key
+    /// The key to run with: `ANTHROPIC_API_KEY` if the shell exported one,
+    /// otherwise whatever was saved from the app's setup screen. Nil if there
+    /// is neither. See `APIKeyStore` for why the saved copy is a 0600 file.
+    public static func resolvedKey() -> String? {
+        APIKeyStore.resolve()
+    }
+
+    /// Asks the API whether this key works, so setup can fail at the moment
+    /// someone pastes a bad key rather than an hour later when they press
+    /// Analyze. One token off the cheapest model — the cost is a rounding
+    /// error and the answer is definitive.
+    ///
+    /// Throws `AnthropicError.http(401, _)` for a rejected key. A network
+    /// failure throws whatever URLSession threw, which the caller should treat
+    /// as "unknown", not "invalid" — being offline is not a bad key.
+    public static func verify(key: String) async throws {
+        _ = try await AnthropicClient(apiKey: key).messages(
+            MessagesRequest(
+                model: "claude-haiku-4-5",
+                maxTokens: 1,
+                messages: [.init(role: "user", content: "hi")]
+            ))
     }
 
     /// Send a Messages API request and return the decoded JSON object from

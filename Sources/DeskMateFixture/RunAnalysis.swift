@@ -13,9 +13,9 @@ enum RunAnalysis {
             throw NSError(domain: "DeskMateFixture", code: 2, userInfo: [
                 NSLocalizedDescriptionKey: "no fixture at \(dbPath)"])
         }
-        guard let key = AnthropicClient.keyFromEnvironment() else {
+        guard let key = AnthropicClient.resolvedKey() else {
             throw NSError(domain: "DeskMateFixture", code: 3, userInfo: [
-                NSLocalizedDescriptionKey: "ANTHROPIC_API_KEY is not set"])
+                NSLocalizedDescriptionKey: "No Anthropic API key — export ANTHROPIC_API_KEY or save one in the app"])
         }
 
         let storage = try Storage(path: dbPath)

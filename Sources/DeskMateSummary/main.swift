@@ -20,11 +20,11 @@ func value(_ flag: String) -> String? {
 // worth having tomorrow morning.
 var narrator: Narrator?
 if !args.contains("--no-narrative") {
-    if let key = AnthropicClient.keyFromEnvironment() {
+    if let key = AnthropicClient.resolvedKey() {
         narrator = Narrator(client: AnthropicClient(apiKey: key))
     } else {
         FileHandle.standardError.write(
-            "ANTHROPIC_API_KEY not set — writing the summary without narrative.\n"
+            "No Anthropic API key — writing the summary without narrative.\n"
                 .data(using: .utf8)!)
     }
 }

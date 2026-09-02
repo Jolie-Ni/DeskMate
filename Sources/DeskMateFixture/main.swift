@@ -169,6 +169,12 @@ if args.count == 2, args[1] == "cross-person" {
     CrossPersonCheck.run()
     exit(0)
 }
+if args.count == 2, args[1] == "summaryjob-check" {
+    SummaryJobCheck.run()
+}
+if args.count == 2, args[1] == "keystore-check" {
+    KeyStoreCheck.run()
+}
 if args.count == 2, args[1] == "sanitize-check" {
     SanitizeCheck.run()
     exit(0)
