@@ -347,11 +347,18 @@ Gatekeeper's wording for unsigned, not a corrupt file. macOS 15 removed the
 Control-click → Open bypass, so the way through is **System Settings → Privacy &
 Security → Open Anyway**, once.
 
-Homebrew does not sidestep this by itself: `quarantine: true` is the default in
-Homebrew's own installer, so a plain `brew install --cask` hits the same wall.
-`--no-quarantine` is what skips it, and Homebrew prints a warning saying so.
-That still beats the DMG — one flag instead of a trip through System Settings —
-but it is a flag the user has to type, not something the cask can declare.
+Homebrew does not sidestep this. `quarantine: true` is the default in its own
+installer, and Homebrew 6 removed the `--no-quarantine` flag that used to turn
+it off, so a `brew install --cask` lands a quarantined app that macOS will not
+launch. Clearing the attribute afterwards is the only route left:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/DeskMate.app
+```
+
+Verified end to end against the real tap: install, clear, launch. That still
+beats the DMG — two commands instead of a trip through System Settings — but a
+cask cannot declare it, so the user has to run it.
 
 `packaging/homebrew/deskmate.rb` is the cask; it belongs in
 `Jolie-Ni/homebrew-tap/Casks/`, and lives here so the version and checksum are

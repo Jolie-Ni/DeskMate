@@ -37,10 +37,11 @@ Builds are not notarized yet — Apple charges $99/year for the certificate that
 **With Homebrew:**
 
 ```bash
-brew install --cask --no-quarantine jolie-ni/tap/deskmate
+brew install --cask jolie-ni/tap/deskmate
+xattr -dr com.apple.quarantine /Applications/DeskMate.app
 ```
 
-`--no-quarantine` is doing real work there, and Homebrew will warn you about it: it skips the Gatekeeper check for this download. Read the source, or trust it as much as you trust any unsigned binary — which is the same question this whole app asks you to answer.
+The second line is doing real work: Homebrew marks every download as quarantined, and macOS refuses to launch a quarantined app it cannot verify. Removing the flag says you accept an unsigned binary from this repo — the same question this whole app asks you to answer. Skip it and you get the "damaged" dialog below instead.
 
 **Or download the app**: grab `DeskMate.dmg` from [Releases](https://github.com/Jolie-Ni/DeskMate/releases), open it, and drag DeskMate to Applications. The first launch says *"DeskMate is damaged and can't be opened."* It is not damaged; that is Gatekeeper's wording for unsigned. Open it once via **System Settings → Privacy & Security → Open Anyway**, and it never asks again.
 

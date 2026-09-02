@@ -179,9 +179,10 @@ or, from a terminal:
 
     xattr -dr com.apple.quarantine /Applications/DeskMate.app
 
-Homebrew does NOT avoid this on its own — it quarantines casks by default. The
-install line that opens cleanly is:
+Homebrew does NOT avoid this — it quarantines every download, and Homebrew 6
+removed the --no-quarantine flag. The install that opens cleanly is two lines:
 
-    brew install --cask --no-quarantine <tap>/deskmate
+    brew install --cask <tap>/deskmate
+    xattr -dr com.apple.quarantine /Applications/DeskMate.app
 NOTE
 fi
