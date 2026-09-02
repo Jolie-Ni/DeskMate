@@ -94,24 +94,32 @@ public actor AnalysisRunner {
         // one occurrence of everything and therefore no patterns. What we skip
         // is re-labelling sessions already labelled, which is the actual cost.
         let cached = try storage.cachedLabels()
-        var labels: [String: SessionLabel] = [:]
+        var collected: [String: SessionLabel] = [:]
         for session in sessions {
             if let hit = cached[session.id] {
-                labels[session.id] = SessionLabel(id: hit.sessionID, label: hit.label, intent: hit.intent)
+                collected[session.id] = SessionLabel(id: hit.sessionID, label: hit.label, intent: hit.intent)
             }
         }
-        let unlabeled = sessions.filter { labels[$0.id] == nil }
+        let unlabeled = sessions.filter { collected[$0.id] == nil }
 
         if !unlabeled.isEmpty {
             let labeling = LabelingService(client: client)
             let fresh = try await labeling.label(unlabeled) { batch, total in
                 progress(.labeling(batchIndex: batch, totalBatches: total))
             }
-            for (id, label) in fresh { labels[id] = label }
+            for (id, label) in fresh { collected[id] = label }
             try storage.cacheLabels(fresh.values.map {
                 StoredSessionLabel(sessionID: $0.id, label: $0.label, intent: $0.intent)
             })
         }
+
+        // Frozen once labelling is done, because the planning task group below
+        // captures it. A `var` reaching into a @Sendable closure is a data race
+        // whether or not the compiler in front of you says so: Swift 5.10
+        // rejects it outright, and Swift 6's region-based isolation happens to
+        // prove this particular case safe. Nothing mutates it past here, so
+        // saying that in the type costs nothing and holds on both.
+        let labels = collected
 
         // 4. Opus 4.7 pattern detection
         progress(.detecting)
@@ -156,11 +164,13 @@ public actor AnalysisRunner {
         // calls and should stay that way, while this path is already talking to
         // the API. Failure is non-fatal — a stale catalog beats none, and no
         // catalog just means the planner works from its own knowledge.
-        var catalog = ConnectorCatalog.load()
-        if catalog == nil || catalog!.isStale() {
+        var loadedCatalog = ConnectorCatalog.load()
+        if loadedCatalog == nil || loadedCatalog!.isStale() {
             progress(.refreshingConnectors)
-            catalog = await ConnectorCatalogFetcher().refreshIfNeeded()
+            loadedCatalog = await ConnectorCatalogFetcher().refreshIfNeeded()
         }
+        // Frozen for the task group below, for the same reason as `labels`.
+        let catalog = loadedCatalog
 
         // 5. One automation plan per surviving procedure, each in its own call
         // with the raw evidence behind it. Concurrent because they are
