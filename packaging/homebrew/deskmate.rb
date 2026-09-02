@@ -18,7 +18,7 @@
 # Settings, plus a clean uninstall path.
 cask "deskmate" do
   version "0.1.0"
-  sha256 "REPLACE_WITH_SHASUM_FROM_PACKAGE_SH"
+  sha256 "595c2a64ea76188433b416c28b21062b1ca30987e47dc0b147ee0cb86b8bc452"
 
   url "https://github.com/Jolie-Ni/DeskMate/releases/download/v#{version}/DeskMate-#{version}.dmg"
   name "DeskMate"
