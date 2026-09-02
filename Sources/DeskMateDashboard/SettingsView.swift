@@ -161,9 +161,13 @@ struct SettingsView: View {
 
         keyState = .checking
         Task {
-            var unreachable = false
+            // `let`, assigned on every path, because the MainActor closure
+            // below captures it — and a captured `var` crossing into a
+            // @Sendable closure is rejected outright by Swift 5.10.
+            let unreachable: Bool
             do {
                 try await AnthropicClient.verify(key: trimmed)
+                unreachable = false
             } catch let error as AnthropicError {
                 await MainActor.run { keyState = .failed(error.localizedDescription) }
                 return

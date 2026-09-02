@@ -245,8 +245,15 @@ final class DashboardModel: ObservableObject {
 
         do {
             let result = try await runner.run { [weak self] progress in
+                // Resolved to a strong `let` before the Task rather than
+                // `self?.` inside it: a weak capture is mutable storage, so
+                // reaching through it from a nested @Sendable closure reads as
+                // a captured var and Swift 5.10 refuses. Holding the model for
+                // the length of one progress update is the right lifetime
+                // anyway — the alternative drops the update.
+                guard let self else { return }
                 Task { @MainActor in
-                    self?.analysisState = .running(message: Self.describe(progress))
+                    self.analysisState = .running(message: Self.describe(progress))
                 }
             }
             let record = LastAnalysis(
