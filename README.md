@@ -32,18 +32,15 @@ Deskmate is the tool I kept wishing existed. It answers the question from eviden
 
 Deskmate is an open-source native macOS app that lives locally on your own laptop. **You own your own data**. Nothing leaves your laptop without your permission.
 
-Builds are not notarized yet — Apple charges $99/year for the certificate that allows it, so macOS treats DeskMate as unsigned. That costs you one extra step, whichever way you install.
-
 **With Homebrew:**
 
 ```bash
 brew install --cask jolie-ni/tap/deskmate
-xattr -dr com.apple.quarantine /Applications/DeskMate.app
 ```
 
-The second line is doing real work: Homebrew marks every download as quarantined, and macOS refuses to launch a quarantined app it cannot verify. Removing the flag says you accept an unsigned binary from this repo — the same question this whole app asks you to answer. Skip it and you get the "damaged" dialog below instead.
+**Or download the app**: grab `DeskMate.dmg` from [Releases](https://github.com/Jolie-Ni/DeskMate/releases), open it, and drag DeskMate to Applications.
 
-**Or download the app**: grab `DeskMate.dmg` from [Releases](https://github.com/Jolie-Ni/DeskMate/releases), open it, and drag DeskMate to Applications. The first launch says *"DeskMate is damaged and can't be opened."* It is not damaged; that is Gatekeeper's wording for unsigned. Open it once via **System Settings → Privacy & Security → Open Anyway**, and it never asks again.
+Builds are signed with a Developer ID certificate and notarized by Apple, with the ticket stapled into both the app and the disk image — so it opens on a double-click, offline, with no security dialog to dismiss.
 
 On first launch DeskMate asks for your Anthropic API key and checks it against the API before saving. You can skip it — capture never touches the network and works with no key at all — and add one later in Settings.
 
@@ -86,7 +83,6 @@ This is a tool that watches your screen. You should be suspicious of it. Here is
 ## Current limitations
 
 - **macOS only**
-- **Not notarized.** First launch needs a trip through System Settings → Privacy & Security, or a `--no-quarantine` install. Screen Recording also has to be re-granted after each update, because the permission is tied to an unsigned build's hash.
 - **Adoption counting does not exist.** 
 - **Analysis is not continuous.** Suggestions are only as good as the last time you pressed *Analyze*. Nothing re-runs on its own.
 

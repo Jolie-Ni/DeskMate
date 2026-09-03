@@ -10,14 +10,11 @@
 # produced them.
 #
 #   brew install --cask jolie-ni/tap/deskmate
-#   xattr -dr com.apple.quarantine /Applications/DeskMate.app
 #
-# The second line is not optional while the build is unnotarized. Homebrew
-# quarantines every download, and a cask cannot waive that on the user's
-# behalf — by design. Homebrew 6 removed the `--no-quarantine` flag that used
-# to, so clearing the attribute afterwards is the only route left. What the
-# cask buys is two commands instead of a trip through System Settings, plus a
-# clean uninstall path.
+# Homebrew quarantines every download, but that is harmless now the builds are
+# notarized: Gatekeeper checks the stapled ticket, finds it valid, and lets the
+# app open. No `xattr` dance, which is just as well — Homebrew 6 removed the
+# `--no-quarantine` flag that used to be the alternative.
 cask "deskmate" do
   version "0.1.0"
   sha256 "595c2a64ea76188433b416c28b21062b1ca30987e47dc0b147ee0cb86b8bc452"

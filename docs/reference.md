@@ -342,33 +342,45 @@ resource envelope instead.
 
 ### What users see
 
-An unnotarized download opens with *"DeskMate is damaged and can't be opened"* —
-Gatekeeper's wording for unsigned, not a corrupt file. macOS 15 removed the
-Control-click → Open bypass, so the way through is **System Settings → Privacy &
-Security → Open Anyway**, once.
+Nothing. A notarized, stapled build opens on a double-click — no dialog, no
+System Settings trip, and it works offline because the ticket is embedded rather
+than fetched. `spctl -a -t exec DeskMate.app` reports `accepted,
+source=Notarized Developer ID`, and the same holds for the DMG.
 
-Homebrew does not sidestep this. `quarantine: true` is the default in its own
-installer, and Homebrew 6 removed the `--no-quarantine` flag that used to turn
-it off, so a `brew install --cask` lands a quarantined app that macOS will not
-launch. Clearing the attribute afterwards is the only route left:
+Homebrew still quarantines every download (`quarantine: true` is the default in
+its installer, and Homebrew 6 removed the `--no-quarantine` flag), but that is
+harmless now: Gatekeeper checks the stapled ticket, finds it valid, and lets the
+app through.
 
-```sh
-xattr -dr com.apple.quarantine /Applications/DeskMate.app
-```
-
-Verified end to end against the real tap: install, clear, launch. That still
-beats the DMG — two commands instead of a trip through System Settings — but a
-cask cannot declare it, so the user has to run it.
+An *unsigned* build still shows *"DeskMate is damaged and can't be opened"* —
+Gatekeeper's wording for unsigned, not a corrupt file. That is what
+`./scripts/package.sh` with no signing environment produces, and it is for
+testing the packaging, not for shipping.
 
 `packaging/homebrew/deskmate.rb` is the cask; it belongs in
 `Jolie-Ni/homebrew-tap/Casks/`, and lives here so the version and checksum are
 updated by the same commit as the build that produced them.
 
-One consequence worth knowing: TCC grants for an ad-hoc signature are keyed to
-the binary's cdhash, so **Screen Recording has to be re-granted after every
-update**. A real Developer ID signature is stable across versions and the grant
-survives. That, more than the "damaged" dialog, is the argument for paying
-Apple.
+Worth knowing: TCC grants are keyed to a signature. Under the old ad-hoc builds
+they were keyed to the binary's cdhash, so **Screen Recording had to be
+re-granted after every update**. A Developer ID signature is stable across
+versions, so the grant now survives an upgrade.
+
+### Notarization is slow the first time
+
+Apple holds a submission for in-depth analysis when it has not seen the app
+before. The first DeskMate submission took **3.5 hours**; Apple's own guidance
+is that the system learns to recognise an app and later submissions get faster.
+There is nothing to fix and nothing to retry while it waits — a signing or
+entitlement problem comes back `Invalid` within minutes, with a log naming it.
+Resubmitting only queues another unfamiliar binary behind the first.
+
+`notarize()` in `package.sh` therefore submits and polls separately rather than
+using `notarytool submit --wait`, which abandons the run the moment one poll
+fails. A few seconds of dropped wifi once killed a build *after* Apple had
+accepted it, leaving the ticket unstapled and an hour of queue wasted. Failed
+polls and failed staples are both retried; only a real `Invalid` verdict stops
+the build.
 
 `.github/workflows/release.yml` runs the same script on a `v*` tag and attaches
 the DMG to the release. It notarizes only when the signing secrets are present,

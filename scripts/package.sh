@@ -42,6 +42,69 @@ BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m==>\033[0m %s\n' "$*" >&2; }
 
+# Submit to Apple, wait for the verdict, and staple the ticket in.
+#
+# Deliberately not `notarytool submit --wait`: that gives up the instant a
+# single poll fails, and under `set -e` a few seconds of flaky wifi killed a
+# build *after* Apple had already accepted it — an hour of queue thrown away
+# and the ticket left unstapled. Submitting and polling separately means a
+# network blip costs one retry instead of the whole run.
+#
+# First submissions from a new Developer ID are held for in-depth analysis and
+# can genuinely take hours. That is not a hang; there is nothing to do but wait.
+# Usage: notarize <file-to-submit> <thing-to-staple> <label>
+# The two paths differ for the app: Apple is handed a zip, but the ticket
+# staples into the .app inside it — stapling the zip itself does nothing.
+notarize() {
+    local path="$1" target="$2" label="$3"
+    local profile="$DESKMATE_NOTARY_PROFILE"
+
+    say "Notarizing $label"
+    local id
+    id=$(xcrun notarytool submit "$path" --keychain-profile "$profile" \
+            --output-format json 2>/dev/null \
+         | /usr/bin/python3 -c 'import sys,json;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || true)
+    [ -n "$id" ] || { echo "notarytool submit returned no submission id for $label" >&2; exit 1; }
+    say "Submission $id — waiting for Apple"
+
+    local status misses=0
+    while :; do
+        status=$(xcrun notarytool info "$id" --keychain-profile "$profile" \
+                    --output-format json 2>/dev/null \
+                 | /usr/bin/python3 -c 'import sys,json;print(json.load(sys.stdin).get("status",""))' 2>/dev/null || true)
+        case "$status" in
+            Accepted) break ;;
+            Invalid|Rejected)
+                echo "Apple rejected $label ($status). Its log:" >&2
+                xcrun notarytool log "$id" --keychain-profile "$profile" >&2 || true
+                exit 1 ;;
+            "")
+                # An unreadable status is the network, not a verdict — Apple
+                # keeps processing either way, so retry rather than fail.
+                misses=$((misses + 1))
+                if [ "$misses" -ge 40 ]; then
+                    echo "lost contact with the notary service for $label (id $id)" >&2
+                    echo "it may still succeed; check: xcrun notarytool info $id --keychain-profile $profile" >&2
+                    exit 1
+                fi ;;
+            *) misses=0 ;;
+        esac
+        sleep 30
+    done
+
+    # The ticket exists on Apple's side now. A failure here is local and
+    # transient, so it should cost a retry, never the submission.
+    local tries=0
+    until xcrun stapler staple "$target"; do
+        tries=$((tries + 1))
+        [ "$tries" -ge 5 ] && { echo "could not staple $label after $tries attempts" >&2; exit 1; }
+        warn "staple failed; retrying in 30s ($tries/5)"
+        sleep 30
+    done
+    xcrun stapler validate "$target" >/dev/null 2>&1 \
+        || { echo "stapler reported success but validation failed for $label" >&2; exit 1; }
+}
+
 # ---------------------------------------------------------------- build
 
 # A universal binary needs SwiftPM's xcbuild path, which ships with Xcode and
@@ -131,11 +194,9 @@ if [ -n "${DESKMATE_NOTARY_PROFILE:-}" ]; then
         echo "Apple will not notarize an ad-hoc signature." >&2
         exit 1
     fi
-    say "Notarizing the app"
     ZIP="$DIST/DeskMate-notarize.zip"
     ditto -c -k --keepParent "$APP" "$ZIP"
-    xcrun notarytool submit "$ZIP" --keychain-profile "$DESKMATE_NOTARY_PROFILE" --wait
-    xcrun stapler staple "$APP"
+    notarize "$ZIP" "$APP" "the app"
     rm -f "$ZIP"
 fi
 
@@ -158,9 +219,7 @@ if [ -n "${DESKMATE_SIGN_ID:-}" ]; then
     codesign --force --sign "$DESKMATE_SIGN_ID" --timestamp "$DMG"
 fi
 if [ -n "${DESKMATE_NOTARY_PROFILE:-}" ]; then
-    say "Notarizing the disk image"
-    xcrun notarytool submit "$DMG" --keychain-profile "$DESKMATE_NOTARY_PROFILE" --wait
-    xcrun stapler staple "$DMG"
+    notarize "$DMG" "$DMG" "the disk image"
 fi
 
 say "Done: $DMG"
@@ -169,20 +228,10 @@ shasum -a 256 "$DMG"
 if [ -z "${DESKMATE_NOTARY_PROFILE:-}" ]; then
     cat <<'NOTE'
 
-This build is not notarized. On macOS 15 and later a download of it opens with
-"DeskMate is damaged and can't be opened" — Gatekeeper's wording for unsigned,
-not a corrupt file. Users get past it with:
-
-    System Settings → Privacy & Security → scroll down → Open Anyway
-
-or, from a terminal:
-
-    xattr -dr com.apple.quarantine /Applications/DeskMate.app
-
-Homebrew does NOT avoid this — it quarantines every download, and Homebrew 6
-removed the --no-quarantine flag. The install that opens cleanly is two lines:
-
-    brew install --cask <tap>/deskmate
-    xattr -dr com.apple.quarantine /Applications/DeskMate.app
+This build is NOT notarized, so a download of it opens with "DeskMate is
+damaged and can't be opened" — Gatekeeper's wording for unsigned, not a corrupt
+file. Fine for testing the packaging locally; do not ship it. Set
+DESKMATE_SIGN_ID and DESKMATE_NOTARY_PROFILE (or let CI do it) for a build
+users can actually open.
 NOTE
 fi
