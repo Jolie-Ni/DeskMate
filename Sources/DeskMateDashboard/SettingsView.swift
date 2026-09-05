@@ -5,12 +5,14 @@ import SwiftUI
 /// Controls for the things this app does on its own.
 ///
 /// Everything here is off-by-consequence rather than off-by-default: these are
-/// switches for behaviour that already sends data somewhere, so each one says
-/// what it sends and where before asking you to decide.
+/// switches for behaviour that already does something on your behalf — sends
+/// data somewhere, or keeps running after you close the window — so each one
+/// says what that is before asking you to decide.
 struct SettingsView: View {
     @Environment(\.dsTheme) private var theme
     @State private var settings = AppSettings.load()
     @State private var saveError: String?
+    @AppStorage(MenuBarPreference.key) private var showMenuBarExtra = true
 
     @State private var storedKey = APIKeyStore.stored()
     @State private var keyDraft = ""
@@ -42,6 +44,7 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: theme.space(3)) {
                 apiKeyCard
+                menuBar
                 dailySummary
                 if let saveError {
                     DSBanner(title: "Couldn't save that", message: saveError, tone: .critical)
@@ -199,6 +202,32 @@ struct SettingsView: View {
             keyState = .idle
         } catch {
             keyState = .failed(error.localizedDescription)
+        }
+    }
+
+    /// The one switch here that isn't about sending data anywhere. It earns its
+    /// place because it changes what closing the window means, and that should
+    /// be said where it can be changed.
+    private var menuBar: some View {
+        DSCard {
+            VStack(alignment: .leading, spacing: theme.space(2)) {
+                DSToggle(
+                    title: "Show in the menu bar",
+                    subtitle: "Start and stop recording from any app.",
+                    isOn: $showMenuBarExtra)
+
+                DSDivider()
+
+                Text(showMenuBarExtra
+                     ? "While this is on, closing this window leaves DeskMate running in "
+                       + "the menu bar; Quit from that menu to close it entirely. "
+                       + "Neither stops the recorder — that's the Stop button."
+                     : "With this off, closing this window quits DeskMate. The recorder "
+                       + "keeps running either way — that's the Stop button.")
+                    .font(theme.body)
+                    .foregroundStyle(theme.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

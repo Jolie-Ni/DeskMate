@@ -7,6 +7,8 @@ import SwiftUI
 /// accessory process: no Dock icon, no menu bar, and the window can't take
 /// focus. Promote to a regular app at startup.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var windowObserver: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
@@ -16,9 +18,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // chrome (scrollbars, menus, focus rings) around a light glaze. Pin the
         // whole app to Aqua until a dark DSTheme exists.
         NSApp.appearance = NSAppearance(named: .aqua)
+
+        // With the menu bar item on, closing the dashboard doesn't quit — it
+        // retires the app to the menu bar. Step out of the Dock at that point
+        // so there isn't an icon for an app with no window; `DashboardWindow.show`
+        // steps back in. `willClose` fires before the window leaves
+        // `NSApp.windows`, so the check waits one hop of the main actor.
+        windowObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: nil, queue: .main
+        ) { note in
+            guard let closing = note.object as? NSWindow else { return }
+            // Delivered on the main queue, which is the main actor by another
+            // name; the assumption just lets the compiler see it.
+            MainActor.assumeIsolated {
+                guard DashboardWindow.isDashboard(closing) else { return }
+                DashboardWindow.noteClosed(closing)
+                Task { @MainActor in
+                    guard MenuBarPreference.isEnabled, !DashboardWindow.isPresent else { return }
+                    NSApp.setActivationPolicy(.accessory)
+                }
+            }
+        }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// Only when the menu bar item is off. With it on, DeskMate lives there
+    /// until you quit it, so that starting and stopping the recorder never
+    /// requires finding and opening the window first.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        !MenuBarPreference.isEnabled
+    }
+
+    /// A Dock click, Finder, Spotlight or `open -a` with nothing showing: the
+    /// window is minimized, or we're retired to the menu bar with no window.
+    /// SwiftUI would normally handle this itself, but it stops the moment the
+    /// delegate implements the method — and we have to, to get back into the
+    /// Dock first. A minimized window we can raise from here. No window at all
+    /// needs `openWindow`, which only the SwiftUI side has; the menu bar label
+    /// is listening, and it's the only way to be in that state.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        guard !hasVisibleWindows else { return true }
+        if DashboardWindow.raiseExisting() { return false }
+        NotificationCenter.default.post(name: DashboardWindow.reopenRequested, object: nil)
+        return false
+    }
 }
 
 @main
@@ -26,14 +68,33 @@ struct DashboardApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = DashboardModel()
     @StateObject private var sharing = SharingModel(storage: DashboardModel.sharedStorage)
+    @AppStorage(MenuBarPreference.key) private var showMenuBarExtra = true
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        WindowGroup("DeskMate") {
+        WindowGroup("DeskMate", id: DashboardWindow.id) {
             ContentView()
                 .environmentObject(model)
                 .environmentObject(sharing)
                 .frame(minWidth: 900, minHeight: 600)
         }
+        // The item can go away without the window being open: ⌘-drag it out
+        // of the menu bar while the app is retired there and SwiftUI flips the
+        // binding. That would leave a process with no window, no Dock icon and
+        // no menu bar item — running, and unreachable. Give it its window back.
+        .onChange(of: showMenuBarExtra) { _, shown in
+            guard !shown, !DashboardWindow.isPresent else { return }
+            DashboardWindow.show(using: openWindow)
+        }
+
+        // The recorder, reachable from any app. Shares the one model, so the
+        // icon and the title-bar dot can never disagree about what's running.
+        MenuBarExtra(isInserted: $showMenuBarExtra) {
+            RecorderMenu(model: model)
+        } label: {
+            RecorderMenuBarLabel(model: model)
+        }
+        .menuBarExtraStyle(.menu)
     }
 }
 
@@ -81,6 +142,12 @@ final class DashboardModel: ObservableObject {
     @Published var sessions: [Session] = []
     @Published var daemonStatus: DaemonStatus?
     @Published var recorderError: String?
+    /// Bumped on every failed start, even when the message is the same as last
+    /// time. `recorderError` alone can't be watched for that: SwiftUI compares
+    /// values across a frame, and nil → the same string inside one frame reads
+    /// as no change at all. The menu bar label watches this to surface failures
+    /// that happen with no window open.
+    @Published private(set) var recorderFailures = 0
     @Published var slices: [ActivitySlice] = []
     @Published var totalCaptures: Int = 0
     @Published var suggestions: [WorkflowSuggestion] = []
@@ -115,6 +182,8 @@ final class DashboardModel: ObservableObject {
     private let storage: Storage?
     private let stats: DashboardStats?
     private var statusPoll: Task<Void, Never>?
+    /// What the poll last saw, so it can publish the moment idleness changes.
+    private var wasIdle = false
     /// When the last query ran, so a foreground refresh can tell a genuine
     /// return to the app from a duplicate of a reload that just happened.
     private var lastReloadAt: Date?
@@ -124,9 +193,16 @@ final class DashboardModel: ObservableObject {
     /// True while the daemon is up but hasn't captured recently — it skips
     /// ticks when you're idle, so "running" and "capturing" are not the same
     /// thing and the indicator shouldn't pretend otherwise.
-    var isIdle: Bool {
-        guard let last = daemonStatus?.lastCaptureAt else { return isRecording }
-        return Date().timeIntervalSince(last) > Config.captureIntervalSeconds * 2
+    var isIdle: Bool { Self.isIdle(daemonStatus) }
+
+    /// Before the first capture the clock runs from launch instead: a recorder
+    /// that started a second ago is about to capture and shouldn't read as
+    /// idle, while one that has had two intervals and produced nothing — no
+    /// Screen Recording permission, typically — should.
+    static func isIdle(_ status: DaemonStatus?) -> Bool {
+        guard let status else { return false }
+        let reference = status.lastCaptureAt ?? status.startedAt
+        return Date().timeIntervalSince(reference) > Config.captureIntervalSeconds * 2
     }
 
     init() {
@@ -172,7 +248,15 @@ final class DashboardModel: ObservableObject {
                 guard let self else { return }
                 let status = DaemonControl.currentStatus()
                 await MainActor.run {
-                    if status != self.daemonStatus { self.daemonStatus = status }
+                    // Idle is derived from the clock, not from the status file:
+                    // when captures simply stop arriving nothing in `status`
+                    // changes, so comparing status alone would leave every
+                    // indicator saying "Recording" after you've walked away.
+                    let idle = Self.isIdle(status)
+                    if status != self.daemonStatus || idle != self.wasIdle {
+                        self.daemonStatus = status
+                        self.wasIdle = idle
+                    }
                 }
             }
         }
@@ -189,7 +273,7 @@ final class DashboardModel: ObservableObject {
             do {
                 _ = try DaemonControl.start()
             } catch {
-                recorderError = error.localizedDescription
+                failStart(error.localizedDescription)
                 return
             }
             // Give it a beat to publish, then reflect reality.
@@ -197,11 +281,15 @@ final class DashboardModel: ObservableObject {
                 try? await Task.sleep(for: .milliseconds(600))
                 self.daemonStatus = DaemonControl.currentStatus()
                 if self.daemonStatus == nil {
-                    self.recorderError =
-                        "The recorder exited immediately. Check \(DaemonControl.logURL.path)."
+                    self.failStart("The recorder exited immediately. Check \(DaemonControl.logURL.path).")
                 }
             }
         }
+    }
+
+    private func failStart(_ message: String) {
+        recorderError = message
+        recorderFailures += 1
     }
 
     /// Clustering is local and free — no API call, no cost — so it can run on
@@ -404,6 +492,23 @@ struct ContentView: View {
                 dashboard
             }
         }
+        // Above the setup/dashboard split, not inside the dashboard: the
+        // recorder can be started from the menu bar before setup is finished,
+        // and a failure there brings this window up to show why. A banner
+        // that only existed on the dashboard would leave that window blank.
+        .overlay(alignment: .bottom) {
+            if let err = model.recorderError {
+                DSBanner(
+                    title: "Recorder didn't start",
+                    message: err,
+                    tone: .critical,
+                    onDismiss: model.dismissRecorderError
+                )
+                .padding(DSTheme.default.space(3))
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(DSMotion.present, value: model.recorderError)
         .dsTheme(.default)
     }
 
@@ -460,16 +565,10 @@ struct ContentView: View {
             model.reloadOnForeground()
         }
         .overlay(alignment: .bottom) {
-            if let err = model.recorderError {
-                DSBanner(
-                    title: "Recorder didn't start",
-                    message: err,
-                    tone: .critical,
-                    onDismiss: model.dismissRecorderError
-                )
-                .padding(DSTheme.default.space(3))
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if let err = model.loadError {
+            // The recorder banner sits one level up, over setup as well; this
+            // one is the dashboard's own. Hidden while the recorder banner is
+            // up so the two never stack.
+            if model.recorderError == nil, let err = model.loadError {
                 DSBanner(
                     title: "Something went wrong",
                     message: err,
@@ -481,7 +580,6 @@ struct ContentView: View {
             }
         }
         .animation(DSMotion.present, value: model.loadError)
-        .animation(DSMotion.present, value: model.recorderError)
     }
 }
 

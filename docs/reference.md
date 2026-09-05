@@ -51,7 +51,9 @@ daemon to run:
 ```
 
 **4. Press Start**, top right. The dashboard spawns `DeskMateDaemon` for you
-and shows a red dot while it runs; **Stop** ends it.
+and shows a red dot while it runs; **Stop** ends it. The eye in the menu bar
+offers the same Start and Stop from inside any app, along with a status line
+that says whether the recorder is capturing, idle, or off.
 
 **5. Grant permissions.** macOS will prompt on first capture. Whatever you miss,
 the daemon reports at startup in
@@ -81,6 +83,12 @@ dashboard leaves recording running, because quitting a window you opened to
 read something should not silently stop collection. Stopping is an explicit act.
 If you move the binaries apart, point `DESKMATE_DAEMON_PATH` at the daemon.
 
+Closing the window does not quit DeskMate either. It retires to the menu bar —
+no Dock icon, no window — and comes back through *Open DeskMate* in that menu,
+or by launching it again (from Finder or Spotlight, if you installed the app).
+*Settings → Show in the menu bar* turns the item off; with it off, closing the
+window quits, and the recorder keeps running regardless.
+
 ## How it works
 
 ```
@@ -101,6 +109,8 @@ DeskMateDashboard  ──►  cluster into sessions  ──►  Claude API  ─�
 Two things keep a re-run cheap and quiet. Labels are cached in the database under a session id that is a stable hash of (start, bucket), so re-clustering doesn't pay Haiku twice for the same session. And a proposal matching a workflow you dismissed in the last 7 days is recorded as auto-dismissed rather than shown again.
 
 **Dashboard** (`DeskMateDashboard`) — four tabs. *Today* shows where your time went, *Workflows* holds the procedures you kept, *Suggestions* lists what Claude proposed (keep or dismiss), and *Settings* switches off anything the app does on its own. A fifth tab, *Team*, joins a shared hub and shows what you have shared to it; it is hidden behind `Config.sharingEnabled`, which is `false` — see [Team sharing](#team-sharing). The views are built from Celadon (青瓷), the design system under `Sources/DeskMateDashboard/DesignSystem`; `DESKMATE_DESIGN_MODE=1` replaces the whole window with its component catalog, which is how you read the design docs without an Xcode preview canvas.
+
+**Menu bar item** (`RecorderMenuBar.swift`) — a status icon and a plain menu that mirror the title-bar recorder control: Start or Stop, Open DeskMate, Quit. It shares the dashboard's `DashboardModel` and its two-second daemon poll, so the icon and the red dot cannot disagree. The poll republishes when idleness changes, not only when the status file does — nothing in that file changes when captures simply stop arriving, so without this every indicator would keep saying "Recording" after you walked away. A recorder start that fails while the window is closed brings the window up to show the error, since the banner it lands in has nowhere else to go.
 
 ## Privacy
 
@@ -240,7 +250,7 @@ half-written MP3.
 | `DeskMateCore` | `Config` (intervals, paths, exclusions), GRDB `Storage` + migrations, `Capture` / `Workflow` models, Vision OCR, redaction, daemon control, `APIKeyStore`, `SummaryJob`, team account and hub client |
 | `DeskMateDaemon` | capture loop, screenshot, idle detection, browser URL, permission check |
 | `DeskMateAnalyzer` | session clustering, Anthropic Messages API client, Haiku labeling, Opus pattern detection, automation planning |
-| `DeskMateDashboard` | SwiftUI app — Today, Workflows, Suggestions, Settings (+ Team, behind `Config.sharingEnabled`) — over the Celadon design system in `DesignSystem/` (tokens, primitives, components, catalog) |
+| `DeskMateDashboard` | SwiftUI app — Today, Workflows, Suggestions, Settings (+ Team, behind `Config.sharingEnabled`) — plus the menu bar item, over the Celadon design system in `DesignSystem/` (tokens, primitives, components, catalog) |
 | `DeskMateFixture` | test harness: fixture runs, comparator checks, sharing checks, hub round trips (see below) |
 | `DeskMateSummary` | the nightly activity summary that the launchd job runs |
 | `server/` | the team hub — FastAPI over Postgres, deployed separately ([its own README](server/README.md)) |
