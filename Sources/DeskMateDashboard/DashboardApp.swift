@@ -252,15 +252,17 @@ final class DashboardModel: ObservableObject {
             analysisState = .failed("Database not open.")
             return
         }
-        guard let apiKey = AnthropicClient.resolvedKey() else {
-            analysisState = .failed(
-                "No Anthropic API key yet. Add one in Settings — analysis is the only thing that needs it.")
+        let provider: any LLMProvider
+        switch ProviderFactory.resolve() {
+        case .ready(let resolved):
+            provider = resolved
+        case .unavailable(let reason):
+            analysisState = .failed(reason + " Analysis is the only thing that needs it.")
             return
         }
 
         analysisState = .running(message: "Starting analysis…")
-        let client = AnthropicClient(apiKey: apiKey)
-        let runner = AnalysisRunner(storage: storage, client: client, lookbackDays: 7)
+        let runner = AnalysisRunner(storage: storage, provider: provider, lookbackDays: 7)
 
         do {
             let result = try await runner.run { [weak self] progress in
@@ -351,9 +353,9 @@ final class DashboardModel: ObservableObject {
         case .clustering:
             return "Clustering captures into sessions…"
         case .labeling(let i, let total):
-            return "Labeling sessions with Haiku 4.5 (\(i)/\(total))…"
+            return "Labeling sessions (\(i)/\(total))…"
         case .detecting:
-            return "Detecting patterns with Opus 4.7…"
+            return "Detecting patterns…"
         case .refreshingConnectors:
             return "Checking which apps Claude can connect to…"
         case .planning(let done, let total):

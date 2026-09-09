@@ -13,7 +13,7 @@ import DeskMateCore
 /// single call the automation is conditioned on the sentences the model has just
 /// written; here it is conditioned on the evidence.
 public struct AutomationPlanner {
-    public let client: AnthropicClient
+    public let provider: any LLMProvider
     /// Per-session cap on the evidence excerpt.
     ///
     /// Measured against real captures: de-duplication leaves ~1.9 million
@@ -24,8 +24,8 @@ public struct AutomationPlanner {
     /// sessions fed them.
     public var maxOCRCharsPerSession: Int
 
-    public init(client: AnthropicClient, maxOCRCharsPerSession: Int = 3000) {
-        self.client = client
+    public init(provider: any LLMProvider, maxOCRCharsPerSession: Int = 3000) {
+        self.provider = provider
         self.maxOCRCharsPerSession = maxOCRCharsPerSession
     }
 
@@ -100,21 +100,22 @@ public struct AutomationPlanner {
         let json = (try? JSONSerialization.data(withJSONObject: payload))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
 
-        let request = MessagesRequest(
-            model: "claude-opus-4-7",
-            maxTokens: 8000,
+        let request = LLMRequest(
+            model: provider.model(for: .reasoning),
+            maxOutputTokens: 8000,
             // Capabilities go in the system prompt, not the payload: the list is
             // identical for every plan in a run, so it sits inside the cached
             // prefix and costs almost nothing after the first call. Connectors
             // vary per procedure and stay in the user message.
-            system: [.init(text: Self.systemPrompt(capabilities), cacheControl: .init())],
-            messages: [.init(role: "user", content: json)],
-            thinking: .adaptive,
-            outputConfig: .init(format: .init(schema: Self.schema), effort: "high")
+            system: Self.systemPrompt(capabilities),
+            prompt: json,
+            jsonSchema: Self.schema,
+            cacheSystemPrompt: true,
+            reasoning: .high
         )
         // Sanitise at the boundary: a structured-output artefact should never
         // reach storage, and every caller would otherwise have to remember.
-        return try await client.messagesParsed(request, as: AutomationPlan.self).sanitized()
+        return try await provider.completeParsed(request, as: AutomationPlan.self).sanitized()
     }
 
     /// Builds the evidence excerpt for one session.

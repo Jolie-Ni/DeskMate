@@ -13,7 +13,7 @@ public struct AnalysisResult {
     public let discardedForWeakEvidence: Int
     /// Proposals dropped because the user already threw that idea away.
     public let discardedAsDismissed: Int
-    /// Sessions sent to Haiku this run. The rest reused a cached label.
+    /// Sessions sent to the labeling model this run. The rest reused a cached label.
     public let sessionsLabeledThisRun: Int
     public let sessionsReusedFromCache: Int
     public let usage: UsageSummary
@@ -38,12 +38,12 @@ public enum AnalysisProgress {
 
 public actor AnalysisRunner {
     private let storage: Storage
-    private let client: AnthropicClient
+    private let provider: any LLMProvider
     private let lookbackDays: Int
 
-    public init(storage: Storage, client: AnthropicClient, lookbackDays: Int = 7) {
+    public init(storage: Storage, provider: any LLMProvider, lookbackDays: Int = 7) {
         self.storage = storage
-        self.client = client
+        self.provider = provider
         self.lookbackDays = lookbackDays
     }
 
@@ -85,7 +85,7 @@ public actor AnalysisRunner {
             )
         }
 
-        // 3. Haiku 4.5 labeling — only for sessions we haven't seen before.
+        // 3. Labeling — only for sessions we have not seen before.
         //
         // This is where `lastCheckedAt` pays off. Clustering still covers the
         // whole lookback window, because a session that straddles the boundary
@@ -103,7 +103,7 @@ public actor AnalysisRunner {
         let unlabeled = sessions.filter { collected[$0.id] == nil }
 
         if !unlabeled.isEmpty {
-            let labeling = LabelingService(client: client)
+            let labeling = LabelingService(provider: provider)
             let fresh = try await labeling.label(unlabeled) { batch, total in
                 progress(.labeling(batchIndex: batch, totalBatches: total))
             }
@@ -121,9 +121,9 @@ public actor AnalysisRunner {
         // saying that in the type costs nothing and holds on both.
         let labels = collected
 
-        // 4. Opus 4.7 pattern detection
+        // 4. Pattern detection
         progress(.detecting)
-        let detector = PatternDetector(client: client)
+        let detector = PatternDetector(provider: provider)
         let outcome = try await detector.detect(sessions: sessions, labels: labels)
 
         // A prompt asking for ≥2 occurrences is a request, not a guarantee, and
@@ -175,7 +175,7 @@ public actor AnalysisRunner {
         // 5. One automation plan per surviving procedure, each in its own call
         // with the raw evidence behind it. Concurrent because they are
         // independent and the wall-clock cost otherwise scales with the count.
-        let planner = AutomationPlanner(client: client)
+        let planner = AutomationPlanner(provider: provider)
         var plans: [Int: AutomationPlan] = [:]
         if !toSurface.isEmpty {
             progress(.planning(done: 0, total: toSurface.count))

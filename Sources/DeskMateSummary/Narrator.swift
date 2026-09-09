@@ -8,11 +8,7 @@ import DeskMateCore
 /// what was actually being done, because that only exists in what was on the
 /// screen. This reads that text and describes it.
 struct Narrator {
-    let client: AnthropicClient
-    /// Overridable because a model name is the thing most likely to age out of
-    /// this file, and an unattended job should be fixable without a rebuild.
-    let model = ProcessInfo.processInfo.environment["DESKMATE_SUMMARY_MODEL"]
-        ?? "claude-sonnet-5"
+    let provider: any LLMProvider
 
     /// Roughly 11k tokens of screen text per window. `excerpt` de-duplicates
     /// repeated lines first — the same chrome appears in hundreds of captures —
@@ -56,10 +52,10 @@ struct Narrator {
     }
 
     private func attempt(text: String, period: String, places: [String]) async -> Attempt {
-        let request = MessagesRequest(
-            model: model,
-            maxTokens: 1600,   // 700 truncated every window mid-sentence
-            system: [.init(text: """
+        let request = LLMRequest(
+            model: provider.model(for: .narration),
+            maxOutputTokens: 1600,   // 700 truncated every window mid-sentence
+            system: """
                 You summarise a person's own screen activity back to them, from text \
                 captured off their screen. They will paste this into a personal \
                 newsletter, so write for a reader who was not there.
@@ -78,21 +74,18 @@ struct Narrator {
 
                 Never address the reader as "you did" — write in the third person or \
                 impersonally ("the week went to…").
-                """)],
-            messages: [.init(role: "user", content: """
+                """,
+            prompt: """
                 Period: \(period)
                 Apps and sites by time: \(places.joined(separator: ", "))
 
                 Screen text:
                 \(text)
-                """)])
+                """)
 
         do {
-            let response = try await client.messages(request)
-            let prose = response.content
-                .filter { $0.type == "text" }
-                .compactMap { $0.text }
-                .joined()
+            let response = try await provider.complete(request)
+            let prose = (response.text ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             return prose.isEmpty ? .empty(response.stopReason ?? "unknown") : .prose(prose)
         } catch {

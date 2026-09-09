@@ -166,6 +166,30 @@ if args.count == 2, args[1] == "summaryjob-check" {
 if args.count == 2, args[1] == "keystore-check" {
     KeyStoreCheck.run()
 }
+if args.count == 2, args[1] == "config-check" {
+    ConfigCheck.run()
+}
+if args.count == 2, args[1] == "json-check" {
+    runBlockingOrExit { await JSONCheck.run() }
+}
+if args.count == 2, args[1] == "provider-smoke" {
+    runBlockingOrExit { await ProviderSmoke.run() }
+}
+if args.count == 2, args[1] == "provider-verify" {
+    runBlockingOrExit { await ProviderCheck.verify() }
+}
+if args.count == 2, args[1] == "provider-print" {
+    ProviderCheck.printResolvedProvider()
+}
+if args.count == 2, args[1] == "provider-check" {
+    ProviderCheck.run()
+}
+if args.count == 2, args[1] == "models-check" {
+    ModelsCheck.run()
+}
+if args.count == 3, args[1] == "models-print" {
+    ModelsCheck.printModel(role: args[2])
+}
 if args.count == 2, args[1] == "sanitize-check" {
     SanitizeCheck.run()
     exit(0)

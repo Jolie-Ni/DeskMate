@@ -10,14 +10,14 @@ private struct LabelBatchResponse: Decodable {
     let labels: [SessionLabel]
 }
 
-/// Sends sessions to Haiku 4.5 in batches and gets back a label + intent for
-/// each. Cheap enough to re-run every analysis.
+/// Sends sessions to the `labeling` model in batches and gets back a label +
+/// intent for each. Cheap enough to re-run every analysis.
 public struct LabelingService {
-    public let client: AnthropicClient
+    public let provider: any LLMProvider
     public var batchSize: Int
 
-    public init(client: AnthropicClient, batchSize: Int = 12) {
-        self.client = client
+    public init(provider: any LLMProvider, batchSize: Int = 12) {
+        self.provider = provider
         self.batchSize = batchSize
     }
 
@@ -41,14 +41,15 @@ public struct LabelingService {
         let userJSON = (try? JSONEncoder().encode(userPayload))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
 
-        let request = MessagesRequest(
-            model: "claude-haiku-4-5",
-            maxTokens: 4096,
-            system: [.init(text: Self.systemPrompt, cacheControl: .init())],
-            messages: [.init(role: "user", content: userJSON)],
-            outputConfig: .init(format: .init(schema: Self.schema))
+        let request = LLMRequest(
+            model: provider.model(for: .labeling),
+            maxOutputTokens: 4096,
+            system: Self.systemPrompt,
+            prompt: userJSON,
+            jsonSchema: Self.schema,
+            cacheSystemPrompt: true
         )
-        return try await client.messagesParsed(request, as: LabelBatchResponse.self).labels
+        return try await provider.completeParsed(request, as: LabelBatchResponse.self).labels
     }
 
     private func sessionDigest(_ s: Session) -> [String: String] {

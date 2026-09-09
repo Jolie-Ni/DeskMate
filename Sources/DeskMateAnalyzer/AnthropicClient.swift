@@ -1,11 +1,12 @@
 import DeskMateCore
 import Foundation
 
+/// What can go wrong that is Anthropic's to explain. Decoding and empty answers
+/// are not here — they are the same failure whoever answered, and live with the
+/// shared parsing helper as `LLMResponseError`.
 public enum AnthropicError: Error, LocalizedError {
     case missingAPIKey
     case http(Int, String)
-    case noTextBlock
-    case decode(String)
 
     public var errorDescription: String? {
         switch self {
@@ -13,16 +14,18 @@ public enum AnthropicError: Error, LocalizedError {
             return "No Anthropic API key. Add one in Settings, or export ANTHROPIC_API_KEY."
         case .http(let code, let body):
             return "Claude API HTTP \(code): \(body)"
-        case .noTextBlock:
-            return "Claude response had no text block."
-        case .decode(let msg):
-            return "Could not decode Claude response: \(msg)"
         }
     }
 }
 
 public struct AnthropicClient {
     public let apiKey: String
+
+    /// Which Claude model does each job. A stored property rather than a
+    /// hardcoded switch so `providers.json` can name one, exactly as it can for
+    /// an OpenAI-compatible endpoint — the asymmetry would otherwise be that
+    /// Anthropic is the one provider whose models only the environment can set.
+    public var roleModels: RoleModels = .anthropicDefaults
 
     private let baseURL = URL(string: "https://api.anthropic.com")!
     private let session: URLSession
@@ -44,40 +47,17 @@ public struct AnthropicClient {
 
     /// Asks the API whether this key works, so setup can fail at the moment
     /// someone pastes a bad key rather than an hour later when they press
-    /// Analyze. One token off the cheapest model — the cost is a rounding
-    /// error and the answer is definitive.
+    /// Analyze. One token off the labeling model — the cheapest of the three,
+    /// so the cost is a rounding error and the answer is definitive. Asking the
+    /// same model the workload uses also keeps this honest once a provider is
+    /// configurable: a hardcoded Claude ID would verify a key against a model
+    /// the configured endpoint may not serve.
     ///
     /// Throws `AnthropicError.http(401, _)` for a rejected key. A network
     /// failure throws whatever URLSession threw, which the caller should treat
     /// as "unknown", not "invalid" — being offline is not a bad key.
     public static func verify(key: String) async throws {
-        _ = try await AnthropicClient(apiKey: key).messages(
-            MessagesRequest(
-                model: "claude-haiku-4-5",
-                maxTokens: 1,
-                messages: [.init(role: "user", content: "hi")]
-            ))
-    }
-
-    /// Send a Messages API request and return the decoded JSON object from
-    /// the first text block. We always use `output_config.format` so the text
-    /// block is guaranteed to be valid JSON matching `T`'s schema.
-    public func messagesParsed<T: Decodable>(
-        _ request: MessagesRequest,
-        as type: T.Type
-    ) async throws -> T {
-        let response = try await messages(request)
-        guard let text = response.firstText else {
-            throw AnthropicError.noTextBlock
-        }
-        guard let data = text.data(using: .utf8) else {
-            throw AnthropicError.decode("text was not valid UTF-8")
-        }
-        do {
-            return try JSONDecoder().decode(T.self, from: data)
-        } catch {
-            throw AnthropicError.decode("\(error.localizedDescription) — payload was: \(text.prefix(500))")
-        }
+        try await AnthropicClient(apiKey: key).verifyCredentials()
     }
 
     public func messages(_ request: MessagesRequest) async throws -> MessagesResponse {
@@ -101,6 +81,138 @@ public struct AnthropicClient {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(MessagesResponse.self, from: data)
+    }
+}
+
+// MARK: - LLMProvider
+
+extension AnthropicClient: LLMProvider {
+    public var id: String { "anthropic" }
+    public var displayName: String { "Claude" }
+
+    /// A static table, and a coarse one.
+    ///
+    /// The Models API reports context windows and capabilities for real, and
+    /// this should read from it rather than pattern-match names — but that is a
+    /// network call on a path that currently makes none, so it waits until
+    /// something needs the precision. Until then the two facts encoded here are
+    /// the two that cause errors rather than worse answers:
+    ///
+    /// Haiku 4.5 rejects `output_config.effort` outright, so pointing the
+    /// `reasoning` role at it would 400 every analysis rather than merely think
+    /// less. Pre-4.6 Claude models reject it too and are not caught by this
+    /// rule — they would need the registry.
+    ///
+    /// The context window is deliberately understated for anything unrecognised:
+    /// too small means a shorter excerpt, too large means a request the API
+    /// refuses, and only one of those is recoverable.
+    public func defaultModel(for role: ModelRole) -> String {
+        roleModels[role]
+    }
+
+    public func capabilities(for model: String) -> ModelCapabilities {
+        let isHaiku = model.contains("haiku")
+        let knownLargeContext = ["claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8",
+                                 "claude-opus-5", "claude-sonnet-5", "claude-sonnet-4-6",
+                                 "claude-fable-5", "claude-mythos-5"]
+        return ModelCapabilities(
+            structuredOutput: true,
+            explicitPromptCaching: true,
+            reasoningEffort: !isHaiku,
+            contextTokens: knownLargeContext.contains(where: { model.hasPrefix($0) })
+                ? 1_000_000
+                : 200_000
+        )
+    }
+
+    public func complete(_ request: LLMRequest) async throws -> LLMResponse {
+        let response = try await messages(messagesRequest(for: request))
+        return LLMResponse(
+            text: response.content
+                .filter { $0.type == "text" }
+                .compactMap(\.text)
+                .joined(),
+            stopReason: response.stopReason,
+            usage: response.usage.map {
+                TokenUsage(
+                    inputTokens: $0.inputTokens,
+                    outputTokens: $0.outputTokens,
+                    cacheReadTokens: $0.cacheReadInputTokens,
+                    cacheWriteTokens: $0.cacheCreationInputTokens)
+            }
+        )
+    }
+
+    /// The neutral request, in Anthropic's spelling.
+    ///
+    /// Separate from `complete` so the translation can be inspected without
+    /// spending a call — `DeskMateFixture provider-check` encodes it and asserts
+    /// the bytes on the wire, which is the only way to be sure an abstraction
+    /// added underneath a working integration did not quietly change what it
+    /// sends.
+    public func messagesRequest(for request: LLMRequest) -> MessagesRequest {
+        let capabilities = capabilities(for: request.model)
+
+        // Each of these is dropped rather than approximated when the model does
+        // not take it. Sending `effort` to Haiku is a 400, and a request that
+        // fails outright is worse than one that thinks less than it hoped to.
+        let system = request.system.map { text in
+            [MessagesRequest.TextBlock(
+                text: text,
+                cacheControl: request.cacheSystemPrompt && capabilities.explicitPromptCaching
+                    ? .init()
+                    : nil)]
+        }
+        let outputConfig: MessagesRequest.OutputConfig?
+        let schema = capabilities.structuredOutput ? request.jsonSchema : nil
+        let effort = capabilities.reasoningEffort ? request.reasoning : nil
+        if schema != nil || effort != nil {
+            outputConfig = .init(
+                format: schema.map { .init(schema: $0) },
+                effort: effort?.rawValue)
+        } else {
+            outputConfig = nil
+        }
+
+        return MessagesRequest(
+            model: request.model,
+            maxTokens: request.maxOutputTokens,
+            system: system,
+            messages: [.init(role: "user", content: request.prompt)],
+            // Effort without thinking is not a combination the API has: depth is
+            // asked for by turning thinking on and saying how much.
+            thinking: effort != nil ? .adaptive : nil,
+            outputConfig: outputConfig
+        )
+    }
+
+    /// One token off the labeling model — the cheapest of the three, so the
+    /// cost is a rounding error and the answer is definitive.
+    public func verifyCredentials() async throws {
+        _ = try await messages(MessagesRequest(
+            model: model(for: .labeling),
+            maxTokens: 1,
+            messages: [.init(role: "user", content: "hi")]
+        ))
+    }
+
+    /// `GET /v1/models`. Free, unlike `verifyCredentials`, which spends a token
+    /// — but it is the credential check that has to prove the key can generate,
+    /// not merely read, so the two stay separate here.
+    public func availableModels() async throws -> [String]? {
+        var urlReq = URLRequest(url: baseURL.appendingPathComponent("/v1/models"))
+        urlReq.httpMethod = "GET"
+        urlReq.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        urlReq.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+
+        let (data, urlResponse) = try await session.data(for: urlReq)
+        let http = urlResponse as! HTTPURLResponse
+        guard (200..<300).contains(http.statusCode) else {
+            throw AnthropicError.http(
+                http.statusCode, String(data: data, encoding: .utf8) ?? "<binary>")
+        }
+        return (try? JSONDecoder().decode(ModelListResponse.self, from: data))?
+            .data.map(\.id)
     }
 }
 
@@ -189,13 +301,6 @@ public struct MessagesResponse: Decodable {
     public let content: [ContentBlock]
     public let usage: Usage?
 
-    public var firstText: String? {
-        for block in content {
-            if block.type == "text", let text = block.text { return text }
-        }
-        return nil
-    }
-
     public struct ContentBlock: Decodable {
         public let type: String
         public let text: String?
@@ -210,30 +315,14 @@ public struct MessagesResponse: Decodable {
     }
 }
 
-// MARK: - JSONValue helper for arbitrary JSON Schema
-
-/// We need to hand-construct JSON Schema objects (not statically typed). This
-/// is a tiny ad-hoc Codable JSON type to express that without dragging in a
-/// full JSON library.
-public enum JSONValue: Encodable {
-    case string(String)
-    case number(Double)
-    case integer(Int)
-    case bool(Bool)
-    case array([JSONValue])
-    case object([String: JSONValue])
-    case null
-
-    public func encode(to encoder: Encoder) throws {
-        var c = encoder.singleValueContainer()
-        switch self {
-        case .string(let v):  try c.encode(v)
-        case .number(let v):  try c.encode(v)
-        case .integer(let v): try c.encode(v)
-        case .bool(let v):    try c.encode(v)
-        case .array(let v):   try c.encode(v)
-        case .object(let v):  try c.encode(v)
-        case .null:           try c.encodeNil()
-        }
-    }
+extension RoleModels {
+    /// The IDs that used to sit as literals at the call sites, so nothing about
+    /// a default Anthropic run changed when they moved here. Also the one place
+    /// to change when a generation ships — worth knowing `reasoning` is one
+    /// behind, `claude-opus-5` being current.
+    public static let anthropicDefaults = RoleModels(
+        labeling: "claude-haiku-4-5",
+        reasoning: "claude-opus-4-7",
+        narration: "claude-sonnet-5"
+    )
 }

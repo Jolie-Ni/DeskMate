@@ -20,12 +20,15 @@ func value(_ flag: String) -> String? {
 // worth having tomorrow morning.
 var narrator: Narrator?
 if !args.contains("--no-narrative") {
-    if let key = AnthropicClient.resolvedKey() {
-        narrator = Narrator(client: AnthropicClient(apiKey: key))
-    } else {
+    switch ProviderFactory.resolve() {
+    case .ready(let provider):
+        narrator = Narrator(provider: provider)
+    case .unavailable(let reason):
+        // Loud, but not fatal. A misconfigured provider is a different problem
+        // from a missing key and the log is the only place anyone will see it,
+        // so say which one happened rather than degrading silently.
         FileHandle.standardError.write(
-            "No Anthropic API key — writing the summary without narrative.\n"
-                .data(using: .utf8)!)
+            "\(reason) Writing the summary without narrative.\n".data(using: .utf8)!)
     }
 }
 

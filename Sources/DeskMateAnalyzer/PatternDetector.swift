@@ -1,7 +1,7 @@
 import Foundation
 import DeskMateCore
 
-/// One detected procedure returned by Opus 4.7.
+/// One detected procedure returned by the `reasoning` model.
 ///
 /// Describes what the user already does. It is either an accurate account of
 /// their work or it isn't — a question of fact, judged against the evidence.
@@ -45,10 +45,10 @@ private struct DetectionResponse: Decodable {
 }
 
 public struct PatternDetector {
-    public let client: AnthropicClient
+    public let provider: any LLMProvider
 
-    public init(client: AnthropicClient) {
-        self.client = client
+    public init(provider: any LLMProvider) {
+        self.provider = provider
     }
 
     public func detect(
@@ -70,15 +70,16 @@ public struct PatternDetector {
         let userJSON = (try? JSONEncoder().encode(payload))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
 
-        let request = MessagesRequest(
-            model: "claude-opus-4-7",
-            maxTokens: 16000,
-            system: [.init(text: Self.systemPrompt, cacheControl: .init())],
-            messages: [.init(role: "user", content: userJSON)],
-            thinking: .adaptive,
-            outputConfig: .init(format: .init(schema: Self.schema), effort: "high")
+        let request = LLMRequest(
+            model: provider.model(for: .reasoning),
+            maxOutputTokens: 16000,
+            system: Self.systemPrompt,
+            prompt: userJSON,
+            jsonSchema: Self.schema,
+            cacheSystemPrompt: true,
+            reasoning: .high
         )
-        let response = try await client.messagesParsed(request, as: DetectionResponse.self)
+        let response = try await provider.completeParsed(request, as: DetectionResponse.self)
         return DetectionOutcome(
             suggestions: response.suggestions,
             assessment: response.assessment

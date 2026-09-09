@@ -48,7 +48,7 @@ struct SuggestionsView: View {
                 }
                 .buttonStyle(.ds(.primary, size: .medium))
                 .disabled(isRunning)
-                .help("Cluster the last 7 days, label sessions with Haiku 4.5, and ask Opus 4.7 to extract your SOPs.")
+                .help("Cluster the last 7 days, label each session, and extract the SOPs hiding in them.")
             }
             .padding(.horizontal, theme.space(3))
             .frame(maxWidth: theme.contentMaxWidth, alignment: .leading)

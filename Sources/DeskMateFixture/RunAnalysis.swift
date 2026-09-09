@@ -13,15 +13,20 @@ enum RunAnalysis {
             throw NSError(domain: "DeskMateFixture", code: 2, userInfo: [
                 NSLocalizedDescriptionKey: "no fixture at \(dbPath)"])
         }
-        guard let key = AnthropicClient.resolvedKey() else {
+        let provider: any LLMProvider
+        switch ProviderFactory.resolve() {
+        case .ready(let resolved):
+            provider = resolved
+        case .unavailable(let reason):
             throw NSError(domain: "DeskMateFixture", code: 3, userInfo: [
-                NSLocalizedDescriptionKey: "No Anthropic API key — export ANTHROPIC_API_KEY or save one in the app"])
+                NSLocalizedDescriptionKey: reason])
         }
+        print("  provider: \(provider.displayName)", flush: true)
 
         let storage = try Storage(path: dbPath)
         let runner = AnalysisRunner(
             storage: storage,
-            client: AnthropicClient(apiKey: key),
+            provider: provider,
             lookbackDays: lookbackDays
         )
 

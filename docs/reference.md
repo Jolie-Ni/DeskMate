@@ -90,8 +90,10 @@ DeskMateDaemon  ──►  ~/Library/Application Support/DeskMate/
   + OCR + redact
                               │
                               ▼
-DeskMateDashboard  ──►  cluster into sessions  ──►  Claude API  ──►  suggestions
+DeskMateDashboard  ──►  cluster into sessions  ──►  model provider  ──►  suggestions
   (SwiftUI, manual)       (local, no network)      (text digests only)
+                                                   Claude by default; see
+                                                   providers.json
 ```
 
 **Capture loop** (`DeskMateDaemon`) — every 30 seconds, if you're not idle, it grabs the frontmost app name, window title, browser URL (via AppleScript), and a screenshot. Vision framework OCRs the image locally, a regex pass redacts secrets, and the row lands in SQLite.
@@ -189,8 +191,8 @@ it entirely.
 Run it by hand any time with `./scripts/daily-summary.sh`: `--dir <folder>`
 overrides the destination directory, `--out <file>` names the file outright,
 `--no-narrative` skips the model call, and `--force` ignores the off switch.
-`DESKMATE_SUMMARY_MODEL` picks the model for the prose (default
-`claude-sonnet-5`). Output goes to `~/Library/Logs/deskmate-summary.log`.
+`DESKMATE_MODEL_NARRATION` picks the model for the prose (default
+`claude-sonnet-5`; the older `DESKMATE_SUMMARY_MODEL` still works). Output goes to `~/Library/Logs/deskmate-summary.log`.
 
 The plist hard-codes an absolute path to `scripts/daily-summary.sh` and to the
 log, so a copy of the repo somewhere else needs those two lines edited before
@@ -272,6 +274,12 @@ reconstruct, and leaking it would make the test pass for the wrong reason.
 | `sanitize-check` | the tools sanitiser, against a real leak and against entries it must not eat |
 | `summaryjob-check` | writes, bootstraps, reads back and boots out the nightly launchd agent, under a throwaway label so the real job is untouched |
 | `keystore-check` | the API key store: round trip, whitespace trimming, and that the file is `0600` and stays `0600`. Refuses to run without `DESKMATE_STORAGE_DIR`, since it writes and deletes the real key file |
+| `models-check` | role → model resolution: defaults, the `DESKMATE_MODEL_*` overrides, and that the legacy `DESKMATE_SUMMARY_MODEL` name still works. Resolves names only — no API call |
+| `provider-check` | encodes the request each call site builds, for both providers, and asserts the JSON — the Anthropic bodies against what was sent before `LLMProvider` existed. Also covers capability guards, provider selection, and that schema keys survive snake_case conversion. No API call |
+| `provider-verify` | resolves the configured provider, prints its per-role models and capabilities, checks the credentials, and confirms the endpoint actually serves each role's model (**network**, no tokens spent) |
+| `provider-smoke` | one small structured call per request shape, through the whole stack — schema accepted, effort tolerated, answer decoded (**spends a few cents**) |
+| `json-check` | structured-output recovery: the extraction scan, and that `completeParsed` reaches for it only after a decode fails. Runs against a stub provider, so no API call |
+| `config-check` | `providers.json`: parsing, patching a built-in, defining a custom endpoint, the refusals, and that the environment outranks the file. Also the migration promise — no config file behaves exactly as before. Refuses to run without `DESKMATE_STORAGE_DIR`, since it writes and deletes real config and key files |
 | `team enroll <code> <email> <name>` / `team status` / `team disconnect` | hub round trips against a real server |
 | `capabilities` / `capabilities check` | print the bundled capability catalog, or check it against the live one |
 | `connectors [db]` | force a refresh of the Claude connector directory (**network**) |
@@ -408,9 +416,165 @@ the daily-summary switch. Tunables live in `Sources/DeskMateCore/Config.swift`:
 
 Analysis lookback (7 days), session gap (5 min), and labeling batch size (12) are currently constructor defaults in `AnalysisRunner`, `SessionClusterer`, and `LabelingService`.
 
-Models are constants too: `claude-haiku-4-5` for labeling, `claude-opus-4-7`
-for pattern detection and automation planning, `claude-sonnet-5` for the
-nightly prose.
+Models are chosen by *role*, not named at the call site. `ModelRole` in
+`Sources/DeskMateAnalyzer/ModelRole.swift` defines three — `labeling` (cheap,
+high volume), `reasoning` (pattern detection and automation planning), and
+`narration` (the nightly prose).
+
+Which model does each job belongs to the **provider**, not to the role: "the
+cheap fast one" is a different string at every endpoint. Switching provider
+therefore switches all three models, which is the only behaviour that does not
+silently 404.
+
+| Role | Variable | Anthropic | OpenAI |
+|---|---|---|---|
+| `labeling` | `DESKMATE_MODEL_LABELING` | `claude-haiku-4-5` | `gpt-5-mini` |
+| `reasoning` | `DESKMATE_MODEL_REASONING` | `claude-opus-4-7` | `gpt-5` |
+| `narration` | `DESKMATE_MODEL_NARRATION` (or `DESKMATE_SUMMARY_MODEL`) | `claude-sonnet-5` | `gpt-4.1` |
+
+An override names a model, not a vendor, so it keeps applying whichever provider
+is selected. Empty reads as unset.
+
+### The provider layer
+
+Nothing in the pipeline talks to Anthropic directly. `LabelingService`,
+`PatternDetector`, `AutomationPlanner` and `Narrator` each hold an
+`any LLMProvider` and build an `LLMRequest` — one system prompt, one user
+message, and three hints: a JSON schema the answer must match, whether the
+system prompt is worth caching, and how hard to think. There is no multi-turn
+state, no tool loop and no image anywhere in the app, which is what keeps the
+neutral request down to four fields.
+
+The hints are hints. `ModelCapabilities` says what a given model can actually
+do, and `AnthropicClient` consults it before spending a parameter — Haiku 4.5
+rejects `output_config.effort` outright, so pointing the `reasoning` role at it
+drops the hint instead of failing every analysis.
+
+`completeParsed` is the one choke point every structured call passes through,
+and the only place that knows a reply was supposed to be JSON. It decodes once;
+if that fails it retries against `JSONExtraction.firstJSONValue`, which finds
+the first complete JSON value in a reply that also contains something else — a
+``` fence, a sentence of preamble, commentary afterwards. The happy path is
+untouched, since both providers constrain generation to the schema and the
+first decode succeeds.
+
+That scan is balanced rather than first-brace-to-last-brace, because the cheap
+version is wrong exactly where it matters: a model that answers and then keeps
+talking, where the last `}` belongs to the commentary. String literals are
+tracked so a brace inside a value — and OCR'd screen text is full of them —
+does not shift the depth.
+
+It is deliberately *not* a repair loop. Nothing asks a model to try again; that
+is a separate cost and is not needed while both providers constrain output
+natively. An endpoint that cannot — an open-weights server without guided
+decoding — is where that decision gets revisited, and `structuredOutput` is the
+flag that would drive it.
+
+### Providers
+
+Two conformers. `AnthropicClient` speaks the Messages API and is the default.
+`OpenAICompatibleClient` speaks chat-completions and is configured by a
+`ProviderProfile`: base URL, auth style, one model per role, and a capability
+declaration. Adding a vendor is a profile, not a class — the wire format is
+genuinely the same, and what differs is exactly what a profile carries.
+
+That is also the seam for an open-weights model deployed in a customer's own
+VPC. vLLM and TGI both expose this API, so such a deployment differs from OpenAI
+only in base URL, auth and capabilities. A profile is deliberately plain data
+with no closed enum of known vendors, because those endpoints cannot be
+enumerated — their hostnames and model ids are internal to the customer.
+`AuthStyle.none` exists for the same reason: an endpoint reachable only from
+inside a private network is authenticated by the network, so the absence of a
+key there is correct rather than a misconfiguration. mTLS and SigV4 are not
+implemented yet; they need a URLSession delegate and a request signer.
+
+Both clients keep their translation (`messagesRequest(for:)` /
+`chatRequest(for:)`) separate from `complete`, so `provider-check` can assert
+the wire format without spending a call.
+
+### Configuring a provider
+
+`providers.json`, in the storage directory beside the database. A file rather
+than the environment because the environment does not reach the people who need
+it: a double-clicked `.app` inherits launchd's environment, not a shell's, so
+every `DESKMATE_*` variable is invisible to a packaged install — the same reason
+the API key stopped being environment-only. The nightly launchd job has the same
+problem.
+
+A file rather than a settings screen, for now, because the configuration that
+matters most is deployed rather than typed. An enterprise pointing fifty
+machines at a model in its own VPC ships this file; it does not ask fifty people
+to key in an internal hostname.
+
+```json
+{
+  "selected": "acme-vpc",
+  "providers": {
+    "anthropic": {
+      "models": { "reasoning": "claude-opus-5" }
+    },
+    "acme-vpc": {
+      "displayName": "Acme internal vLLM",
+      "baseURL": "https://llm.internal.acme.corp/v1",
+      "auth": "none",
+      "models": {
+        "labeling":  "Qwen3-8B-Instruct",
+        "reasoning": "Qwen3-72B-Instruct",
+        "narration": "Qwen3-72B-Instruct"
+      },
+      "capabilities": { "reasoningEffort": false, "contextTokens": 32768 }
+    }
+  }
+}
+```
+
+An entry whose id matches a built-in (`anthropic`, `openai`) **patches** it —
+name only what you want to change, and a partial `models` map leaves the roles
+it does not mention alone. Any other id **defines** a provider, must give a
+`baseURL` and all three models, and is assumed to speak the OpenAI
+chat-completions API. `auth` is `bearer` (default), `none`, or `header` with
+`authHeader` naming the header.
+
+Nothing secret goes here. Keys stay in their own `0600` files — `api-key` for
+Anthropic (unchanged, so existing installs are untouched) and
+`api-key-<provider>` for everything else — so `providers.json` is safe to diff,
+log, or paste into a bug report.
+
+A missing file means defaults. A **malformed** file is a hard error rather than
+a shrug: someone edited it meaning to change something, and quietly carrying on
+with the previous provider would spend the wrong money against the wrong key
+while looking like it worked. The same goes for a provider that is selected but
+undescribed, or described without a `baseURL` or without models.
+
+**Precedence** is environment → `providers.json` → built-in defaults. The
+environment stays on top because it is the escape hatch for a run that should
+not disturb the machine's configuration — `DESKMATE_PROVIDER=openai
+DeskMateFixture analyze …` must not mean editing a file the dashboard also
+reads.
+
+| Variable | Effect |
+|---|---|
+| `DESKMATE_PROVIDER` | Overrides `selected`. Trimmed, case-insensitive. |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Override that provider's saved key. A custom provider uses `DESKMATE_API_KEY_<ID>`, e.g. `DESKMATE_API_KEY_ACME_VPC`. |
+| `DESKMATE_OPENAI_BASE_URL` | Points the built-in `openai` profile at another endpoint. |
+
+`DeskMateFixture provider-verify` resolves the configured provider, prints the
+model and capabilities for each role, checks the credentials, and confirms the
+endpoint serves each role's model. It costs no tokens — run it after configuring
+a provider rather than discovering a bad key an hour into an analysis.
+
+The model check is alias-aware. A listing returns canonical ids while an alias
+is a valid thing to send: `claude-haiku-4-5` is absent from Anthropic's list but
+generates fine, because the list carries `claude-haiku-4-5-20251001`. A served
+id therefore counts when the remainder after the configured name is entirely
+digits — narrow on purpose, since accepting any suffix would let `gpt-5` match a
+served `gpt-5-mini` and pass a model the endpoint does not have.
+
+`DeskMateFixture provider-smoke` goes further and issues real requests: one per
+request shape, so both the schema-only translation and the schema-plus-effort
+one are exercised. It **spends a few cents**, and it is the only check that
+proves structured output actually works against a given endpoint — a `GET`
+cannot. Worth running once whenever a new provider is configured.
 
 ### Team sharing
 
@@ -446,6 +610,11 @@ a run at the old host with
 | `DESKMATE_DAEMON_PATH` | Where the dashboard looks for `DeskMateDaemon`, if you moved the binaries apart. |
 | `DESKMATE_HUB_URL` | Overrides `Config.hubURL` for one run. |
 | `DESKMATE_SUMMARY_DIR` | Overrides where the nightly summary is written, ahead of the Google Drive lookup. |
-| `DESKMATE_SUMMARY_MODEL` | Model for the nightly prose. Defaults to `claude-sonnet-5`. |
+| `DESKMATE_MODEL_LABELING`, `DESKMATE_MODEL_REASONING`, `DESKMATE_MODEL_NARRATION` | Model per role. See the role table above for defaults. |
+| `DESKMATE_SUMMARY_MODEL` | Older name for `DESKMATE_MODEL_NARRATION`, still honoured. Model for the nightly prose. Defaults to `claude-sonnet-5`. |
+| `DESKMATE_PROVIDER` | Which provider to use. Overrides `selected` in `providers.json`. Defaults to `anthropic`. |
+| `OPENAI_API_KEY` | Analysis and the nightly prose when the provider is `openai`. Takes precedence over `api-key-openai`. |
+| `DESKMATE_API_KEY_<ID>` | The same, for a provider defined in `providers.json`. |
+| `DESKMATE_OPENAI_BASE_URL` | Points the built-in `openai` profile at a different endpoint. |
 | `DESKMATE_DESIGN_MODE` | `1` replaces the dashboard window with the Celadon component catalog. |
-| `OPENAI_API_KEY`, `BRIEF_DIR` | `newsletter_voice.py` only — nothing in the Swift app reads either. |
+| `BRIEF_DIR` | `newsletter_voice.py` only — nothing in the Swift app reads it. |
