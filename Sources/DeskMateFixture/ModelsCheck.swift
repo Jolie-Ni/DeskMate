@@ -68,9 +68,20 @@ enum ModelsCheck {
             let models = ModelRole.allCases.map { provider.defaultModel(for: $0) }
             check(models.allSatisfy { !$0.isEmpty },
                   "\(provider.id) names a model for every role")
-            check(Set(models).count == models.count,
-                  "\(provider.id) uses a distinct model per role")
         }
+        // Anthropic still splits by role — a cheap model labels, a strong one
+        // reasons. OpenAI deliberately does not: one current model for all
+        // three, so a new user needs no `models` block at all. Distinctness is
+        // therefore an Anthropic property, not a rule, and asserting it for
+        // both would be asserting an old decision rather than a live one. What
+        // matters for either is that every role is named, above, and that roles
+        // stay independently overridable, below.
+        let claudeRoleModels = ModelRole.allCases.map { anthropic.defaultModel(for: $0) }
+        check(Set(claudeRoleModels).count == claudeRoleModels.count,
+              "anthropic uses a distinct model per role")
+        let openAIRoleModels = ModelRole.allCases.map { openAI.defaultModel(for: $0) }
+        check(Set(openAIRoleModels).count == 1,
+              "openai uses one model for every role, so no config is needed to start")
         let claudeModels = Set(ModelRole.allCases.map { anthropic.defaultModel(for: $0) })
         let openAIModels = Set(ModelRole.allCases.map { openAI.defaultModel(for: $0) })
         check(claudeModels.isDisjoint(with: openAIModels),

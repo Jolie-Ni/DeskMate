@@ -122,13 +122,23 @@ extension ProviderProfile {
         displayName: "OpenAI",
         baseURL: URL(string: "https://api.openai.com/v1")!,
         auth: .bearer,
-        // Chosen to match how each role is used, not to mirror the Anthropic
-        // picks: labeling is high-volume and wants cheap, reasoning carries the
-        // product, narration wants context length more than reasoning depth.
+        // One model for all three roles, deliberately. The earlier split picked
+        // a cheap model per role, which reads well and cost more than it saved:
+        // the default that mattered was `reasoning`, and it was `gpt-5`, which
+        // takes `reasoning_effort: high` literally and spends minutes on a
+        // single detection call. Newer models throttle themselves the way
+        // Anthropic's adaptive thinking does, so the fix was a current model
+        // rather than a lower effort.
+        //
+        // Uniform because the alternative asks every OpenAI user to fill in a
+        // `models` block before the product is usable, and a default nobody can
+        // take as-is is not a default. Anyone who wants a cheaper labeling pass
+        // — it is the high-volume role, once per session — names one in
+        // `providers.json`, which is a one-line change.
         roleModels: RoleModels(
-            labeling: "gpt-5-mini",
-            reasoning: "gpt-5",
-            narration: "gpt-4.1"
+            labeling: "gpt-5.6-sol",
+            reasoning: "gpt-5.6-sol",
+            narration: "gpt-5.6-sol"
         ),
         defaultCapabilities: ModelCapabilities(
             structuredOutput: true,
@@ -136,6 +146,9 @@ extension ProviderProfile {
             reasoningEffort: false,
             contextTokens: 128_000
         ),
+        // Prefix-matched, so every `gpt-5.x` name — including the default
+        // above — inherits reasoning effort from the `gpt-5` entry. A future
+        // `gpt-6` will not, and will silently lose the hint until it is added.
         capabilityOverrides: ["gpt-5", "o3", "o4"].map { family in
             CapabilityOverride(
                 modelPrefix: family,

@@ -87,26 +87,13 @@ The newline `echo` leaves behind is trimmed on read and does no harm. The `chmod
 
 Do not reach for `OPENAI_API_KEY` in your shell. An app you double-click inherits launchd's environment rather than your terminal's, so an exported variable is invisible to it — which is the whole reason these key files exist. The variable works only if you launch DeskMate from a terminal.
 
-**2. Select the provider, and name the models.**
+**2. Write `providers.json` in that same folder.** One line is the whole file.
 
 ```json
-{
-  "selected": "openai",
-  "providers": {
-    "openai": {
-      "models": {
-        "labeling":  "gpt-5.4-mini",
-        "reasoning": "gpt-5.6-sol",
-        "narration": "gpt-5.6-sol"
-      }
-    }
-  }
-}
+{ "selected": "openai" }
 ```
 
-`{ "selected": "openai" }` on its own is enough to switch, but write the `models` block anyway. The built-in defaults are a generation behind, and the reasoning model is the one you feel: pattern detection is a single call covering your whole week, sent at high reasoning effort. Anthropic gets `thinking: adaptive` there and decides for itself how hard to think. OpenAI gets a fixed `reasoning_effort: "high"`, and an older model takes that literally and spends minutes. A current model throttles itself the way adaptive thinking does.
-
-Model names move quickly, so check what your own account serves rather than trusting the list above.
+That is enough. All three jobs run on `gpt-5.6-sol`, which is a current model and picks its own reasoning depth. You only need a `models` block if you want something different — see [Other combinations](#other-combinations) below.
 
 **3. Confirm it took.** Open Settings. When the active provider is not Anthropic, a banner reads "Analyze is using OpenAI" and tells you the key on that screen is Anthropic's and is not in use. That banner is your check, since `config-print` below only exists if you build from source. The change applies to your next *Analyze*.
 

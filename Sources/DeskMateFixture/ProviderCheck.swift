@@ -220,6 +220,15 @@ enum ProviderCheck {
               "gpt-4.1 declares no reasoning effort")
         check(openAI.capabilities(for: "gpt-5-mini").reasoningEffort,
               "gpt-5-mini declares reasoning effort")
+        // The default rests on this. Effort is attached by prefix, so a default
+        // renamed outside the `gpt-5` family would keep working and quietly
+        // stop asking the model to think — the failure that is invisible until
+        // someone reads a shallow suggestion and blames the prompt.
+        for role in ModelRole.allCases {
+            let model = ProviderProfile.openAI.roleModels[role]
+            check(openAI.capabilities(for: model).reasoningEffort,
+                  "the default \(role.rawValue) model (\(model)) declares reasoning effort")
+        }
         check(!openAI.capabilities(for: "gpt-4.1").explicitPromptCaching,
               "no explicit cache breakpoints anywhere on OpenAI")
         check(openAI.capabilities(for: "gpt-4.1").structuredOutput,
