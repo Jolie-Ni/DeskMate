@@ -12,7 +12,7 @@ import DeskMateAnalyzer
 ///
 ///     DeskMateFixture provider-smoke
 ///
-/// **Spends API credit** — deliberately, but very little. Two calls, a few
+/// **Spends API credit** — deliberately, but very little. Three calls, a few
 /// hundred tokens each, at low effort. Cents, not dollars.
 enum ProviderSmoke {
 
@@ -97,8 +97,34 @@ enum ProviderSmoke {
             }
         }
 
+        // The third request shape, and the only one with no schema at all: the
+        // nightly narrator asks for prose. Worth its own call because a
+        // structured request and a free-text one exercise different halves of
+        // the streaming path — one accumulates a JSON document that must parse,
+        // the other a paragraph that must simply arrive, and a provider can get
+        // one right while returning nothing for the other.
+        let narrationModel = provider.model(for: .narration)
+        do {
+            let response = try await provider.complete(LLMRequest(
+                model: narrationModel,
+                maxOutputTokens: 200,
+                system: "You write one short plain sentence. No lists, no preamble.",
+                prompt: "Describe what a spreadsheet is, in one sentence."))
+            let prose = (response.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if prose.isEmpty {
+                print("  FAIL narration (\(narrationModel)) — returned no text "
+                    + "(stop reason: \(response.stopReason ?? "none"))")
+                ok = false
+            } else {
+                print("  ok   narration (\(narrationModel)) → \(prose.prefix(60))…")
+            }
+        } catch {
+            print("  FAIL narration (\(narrationModel)) — \(error.localizedDescription)")
+            ok = false
+        }
+
         print(ok
-            ? "provider-smoke: PASS — structured output works end to end"
+            ? "provider-smoke: PASS — all three request shapes work end to end"
             : "provider-smoke: FAIL")
         exit(ok ? 0 : 1)
     }

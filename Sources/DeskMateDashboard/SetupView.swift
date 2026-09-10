@@ -189,8 +189,15 @@ struct SetupView: View {
 enum SetupState {
     private static let key = "setupSeen"
 
+    /// Whether to show the setup screen at all.
+    ///
+    /// Asks whether *a* provider can be built, not whether an Anthropic key
+    /// exists. Someone who pointed `providers.json` at OpenAI, or at a model
+    /// inside their own network that needs no key, is set up — and being asked
+    /// for a Claude key at every launch would be the app failing to notice its
+    /// own configuration.
     static var needsSetup: Bool {
-        if APIKeyStore.hasKey { return false }
+        if case .ready = ProviderFactory.resolve() { return false }
         return !UserDefaults.standard.bool(forKey: key)
     }
 

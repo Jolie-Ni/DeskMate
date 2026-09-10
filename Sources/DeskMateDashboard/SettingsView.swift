@@ -53,6 +53,19 @@ struct SettingsView: View {
         }
     }
 
+    /// Which provider `Analyze` would use right now, resolved the same way the
+    /// analysis path resolves it. Falls back to the id when nothing can be
+    /// built — a misconfigured file should still name what it asked for.
+    private var activeProviderID: String {
+        if case .ready(let provider) = ProviderFactory.resolve() { return provider.id }
+        return ProviderFactory.selectedProviderID((try? ProviderConfig.load()) ?? .init())
+    }
+
+    private var activeProviderName: String {
+        if case .ready(let provider) = ProviderFactory.resolve() { return provider.displayName }
+        return activeProviderID
+    }
+
     // MARK: - API key
 
     /// The key is the one setting that can be wrong in a way the app cannot
@@ -70,6 +83,17 @@ struct SettingsView: View {
                     .font(theme.body)
                     .foregroundStyle(theme.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                // This card only edits the Anthropic key, which is no longer
+                // necessarily the one in use. Saying so beats letting someone
+                // paste a working key and wonder why nothing changed.
+                if activeProviderID != "anthropic" {
+                    DSBanner(
+                        title: "Analyze is using \(activeProviderName)",
+                        message: "That comes from providers.json. This key is Anthropic's "
+                               + "and is not being used right now.",
+                        tone: .attention)
+                }
 
                 DSDivider()
 
