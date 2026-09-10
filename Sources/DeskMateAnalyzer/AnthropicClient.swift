@@ -33,8 +33,19 @@ public struct AnthropicClient {
     public init(apiKey: String) {
         self.apiKey = apiKey
         let cfg = URLSessionConfiguration.default
-        cfg.timeoutIntervalForRequest = 300       // per-request idle
-        cfg.timeoutIntervalForResource = 600      // total wall-clock
+        // Now that requests stream, `timeoutIntervalForRequest` means what it
+        // says: time between bytes, not time to the whole answer. Bytes arrive
+        // throughout — Anthropic sends pings while thinking, OpenAI a role
+        // delta up front — so a five-minute silence really is a dead
+        // connection and should be treated as one.
+        //
+        // This was briefly 900s, when a non-streamed call sent nothing until it
+        // was finished and the idle timeout was really a cap on generation.
+        // Raising it worked, but it also meant a genuinely dead connection took
+        // fifteen minutes to notice. The resource timeout stays generous
+        // because a whole analysis legitimately runs long.
+        cfg.timeoutIntervalForRequest = 300
+        cfg.timeoutIntervalForResource = 1800
         self.session = URLSession(configuration: cfg)
     }
 
@@ -126,21 +137,128 @@ extension AnthropicClient: LLMProvider {
     }
 
     public func complete(_ request: LLMRequest) async throws -> LLMResponse {
-        let response = try await messages(messagesRequest(for: request))
+        let wire = messagesRequest(for: request)
+
+        // Streamed unless the model says it cannot be. Nothing downstream wants
+        // tokens as they arrive — every call site needs a whole JSON document or
+        // a whole paragraph — so this is purely about keeping bytes on the wire
+        // while the model thinks, and the accumulated result is identical.
+        guard capabilities(for: request.model).streaming else {
+            let response = try await messages(wire)
+            return LLMResponse(
+                text: response.content
+                    .filter { $0.type == "text" }
+                    .compactMap(\.text)
+                    .joined(),
+                stopReason: response.stopReason,
+                usage: response.usage.map {
+                    TokenUsage(
+                        inputTokens: $0.inputTokens,
+                        outputTokens: $0.outputTokens,
+                        cacheReadTokens: $0.cacheReadInputTokens,
+                        cacheWriteTokens: $0.cacheCreationInputTokens)
+                }
+            )
+        }
+
+        let streamed = try await stream(messagesRequest(for: request, streaming: true))
         return LLMResponse(
-            text: response.content
-                .filter { $0.type == "text" }
-                .compactMap(\.text)
-                .joined(),
-            stopReason: response.stopReason,
-            usage: response.usage.map {
-                TokenUsage(
-                    inputTokens: $0.inputTokens,
-                    outputTokens: $0.outputTokens,
-                    cacheReadTokens: $0.cacheReadInputTokens,
-                    cacheWriteTokens: $0.cacheCreationInputTokens)
+            text: streamed.text,
+            stopReason: streamed.stopReason,
+            usage: streamed.usage)
+    }
+
+    /// Consumes a streamed Messages response and returns what it added up to.
+    ///
+    /// Anthropic's stream is a sequence of typed events rather than one repeated
+    /// chunk shape. Only four of them carry anything worth keeping:
+    ///
+    ///   - `message_start` has the input token counts, including the cache
+    ///     figures, which never appear again;
+    ///   - `content_block_delta` carries the text, one fragment at a time — and
+    ///     only when its inner `type` is `text_delta`, since `thinking_delta`
+    ///     arrives on the same event and must not be concatenated into the
+    ///     answer;
+    ///   - `message_delta` carries the stop reason and the output token count;
+    ///   - `error` can arrive mid-stream after a 200, which is the case that
+    ///     would otherwise surface as a truncated document.
+    func stream(_ request: MessagesRequest) async throws -> StreamedResponse {
+        var urlReq = URLRequest(url: baseURL.appendingPathComponent("/v1/messages"))
+        urlReq.httpMethod = "POST"
+        urlReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlReq.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        urlReq.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        urlReq.httpBody = try encoder.encode(request)
+
+        let (bytes, urlResponse) = try await session.bytes(for: urlReq)
+        let http = urlResponse as! HTTPURLResponse
+        guard (200..<300).contains(http.statusCode) else {
+            // The body is still a stream here, so an error has to be collected
+            // rather than read whole.
+            var body = Data()
+            for try await byte in bytes { body.append(byte) }
+            throw AnthropicError.http(
+                http.statusCode, String(data: body, encoding: .utf8) ?? "<binary>")
+        }
+
+        var out = StreamedResponse()
+        for try await line in bytes.lines {
+            try Self.apply(line, to: &out)
+        }
+        return out
+    }
+
+    /// Folds one SSE line into the running result.
+    ///
+    /// Separate from the network loop so `stream-check` can drive it with canned
+    /// events. Decoding an event stream is exactly the kind of code that fails
+    /// silently — a mistyped field name yields nil, nil yields no text, and no
+    /// text looks like a model that answered nothing.
+    public static func apply(_ line: String, to out: inout StreamedResponse) throws {
+        guard let payload = ServerSentEvents.payload(of: line),
+              let data = payload.data(using: .utf8)
+        else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        // An unrecognised event is skipped rather than fatal: Anthropic adds
+        // event types, and a decoder that insisted on knowing all of them would
+        // break on the first one it had not been told about.
+        guard let event = try? decoder.decode(StreamEvent.self, from: data) else { return }
+
+        switch event.type {
+        case "message_start":
+            if let usage = event.message?.usage {
+                out.usage.inputTokens = usage.inputTokens
+                out.usage.cacheReadTokens = usage.cacheReadInputTokens
+                out.usage.cacheWriteTokens = usage.cacheCreationInputTokens
             }
-        )
+        case "content_block_delta":
+            // `thinking_delta` rides the same event and must not be
+            // concatenated into the answer.
+            if event.delta?.type == "text_delta", let text = event.delta?.text {
+                out.text += text
+            }
+        case "message_delta":
+            out.stopReason = event.delta?.stopReason ?? out.stopReason
+            if let outputTokens = event.usage?.outputTokens {
+                out.usage.outputTokens = outputTokens
+            }
+        case "error":
+            throw AnthropicError.http(
+                500, event.error?.message ?? "stream reported an unspecified error")
+        default:
+            return
+        }
+    }
+
+    /// The whole fold, for a stream already in hand.
+    public static func accumulate(_ lines: [String]) throws -> StreamedResponse {
+        var out = StreamedResponse()
+        for line in lines { try apply(line, to: &out) }
+        return out
     }
 
     /// The neutral request, in Anthropic's spelling.
@@ -150,7 +268,9 @@ extension AnthropicClient: LLMProvider {
     /// the bytes on the wire, which is the only way to be sure an abstraction
     /// added underneath a working integration did not quietly change what it
     /// sends.
-    public func messagesRequest(for request: LLMRequest) -> MessagesRequest {
+    public func messagesRequest(
+        for request: LLMRequest, streaming: Bool = false
+    ) -> MessagesRequest {
         let capabilities = capabilities(for: request.model)
 
         // Each of these is dropped rather than approximated when the model does
@@ -177,6 +297,7 @@ extension AnthropicClient: LLMProvider {
         return MessagesRequest(
             model: request.model,
             maxTokens: request.maxOutputTokens,
+            stream: streaming ? true : nil,
             system: system,
             messages: [.init(role: "user", content: request.prompt)],
             // Effort without thinking is not a combination the API has: depth is
@@ -221,6 +342,8 @@ extension AnthropicClient: LLMProvider {
 public struct MessagesRequest: Encodable {
     public var model: String
     public var maxTokens: Int
+    /// Set by the client, not by callers — see `AnthropicClient.complete`.
+    public var stream: Bool?
     public var system: [TextBlock]?
     public var messages: [Message]
     public var thinking: Thinking?
@@ -230,6 +353,7 @@ public struct MessagesRequest: Encodable {
     public init(
         model: String,
         maxTokens: Int,
+        stream: Bool? = nil,
         system: [TextBlock]? = nil,
         messages: [Message],
         thinking: Thinking? = nil,
@@ -238,6 +362,7 @@ public struct MessagesRequest: Encodable {
     ) {
         self.model = model
         self.maxTokens = maxTokens
+        self.stream = stream
         self.system = system
         self.messages = messages
         self.thinking = thinking
@@ -325,4 +450,42 @@ extension RoleModels {
         reasoning: "claude-opus-4-7",
         narration: "claude-sonnet-5"
     )
+}
+
+// MARK: - Stream events
+
+/// Every Anthropic stream event, flattened into one optional-heavy shape.
+///
+/// One type rather than an enum with six cases because only four fields are
+/// ever read, and a decoder that must recognise every event type would fail on
+/// the first one Anthropic adds — an unknown event should be skipped, not fatal.
+struct StreamEvent: Decodable {
+    let type: String
+    let message: Message?
+    let delta: Delta?
+    let usage: Usage?
+    let error: StreamError?
+
+    struct Message: Decodable {
+        let usage: Usage?
+    }
+
+    struct Delta: Decodable {
+        /// `text_delta` or `thinking_delta`; only the former is the answer.
+        let type: String?
+        let text: String?
+        let stopReason: String?
+    }
+
+    struct Usage: Decodable {
+        let inputTokens: Int?
+        let outputTokens: Int?
+        let cacheReadInputTokens: Int?
+        let cacheCreationInputTokens: Int?
+    }
+
+    struct StreamError: Decodable {
+        let type: String?
+        let message: String?
+    }
 }

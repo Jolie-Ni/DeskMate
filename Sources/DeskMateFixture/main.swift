@@ -166,6 +166,12 @@ if args.count == 2, args[1] == "summaryjob-check" {
 if args.count == 2, args[1] == "keystore-check" {
     KeyStoreCheck.run()
 }
+if args.count == 2, args[1] == "stream-check" {
+    StreamCheck.run()
+}
+if args.count == 2, args[1] == "metering-check" {
+    runBlockingOrExit { await MeteringCheck.run() }
+}
 if args.count == 2, args[1] == "config-check" {
     ConfigCheck.run()
 }
@@ -200,6 +206,28 @@ if args.count >= 3, args[1] == "excerpt" {
 }
 if args.count == 4, args[1] == "score" {
     try Score.run(derived: URL(fileURLWithPath: args[2]), dbPath: args[3])
+    exit(0)
+}
+if args.count >= 5, args[1] == "sweep" {
+    let repeats = args.firstIndex(of: "--repeats")
+        .map { $0 + 1 }
+        .flatMap { $0 < args.count ? Int(args[$0]) : nil } ?? 1
+    let keep = args.firstIndex(of: "--keep")
+        .map { $0 + 1 }
+        .flatMap { $0 < args.count ? args[$0] : nil }
+    let lookback = args.firstIndex(of: "--lookback")
+        .map { $0 + 1 }
+        .flatMap { $0 < args.count ? Int(args[$0]) : nil } ?? 7
+    runBlockingOrExit {
+        try await Sweep.run(
+            derived: URL(fileURLWithPath: args[2]),
+            fixture: args[3],
+            specPath: args[4],
+            repeats: max(1, repeats),
+            lookbackDays: max(1, lookback),
+            keep: keep,
+            go: args.contains("--go"))
+    }
     exit(0)
 }
 if args.count >= 3, args[1] == "analyze" {

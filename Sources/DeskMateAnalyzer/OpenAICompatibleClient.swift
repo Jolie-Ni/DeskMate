@@ -46,8 +46,19 @@ public struct OpenAICompatibleClient {
         self.profile = profile
         self.apiKey = apiKey
         let cfg = URLSessionConfiguration.default
+        // Now that requests stream, `timeoutIntervalForRequest` means what it
+        // says: time between bytes, not time to the whole answer. Bytes arrive
+        // throughout — Anthropic sends pings while thinking, OpenAI a role
+        // delta up front — so a five-minute silence really is a dead
+        // connection and should be treated as one.
+        //
+        // This was briefly 900s, when a non-streamed call sent nothing until it
+        // was finished and the idle timeout was really a cap on generation.
+        // Raising it worked, but it also meant a genuinely dead connection took
+        // fifteen minutes to notice. The resource timeout stays generous
+        // because a whole analysis legitimately runs long.
         cfg.timeoutIntervalForRequest = 300
-        cfg.timeoutIntervalForResource = 600
+        cfg.timeoutIntervalForResource = 1800
         self.session = URLSession(configuration: cfg)
     }
 
@@ -121,34 +132,118 @@ extension OpenAICompatibleClient: LLMProvider {
     }
 
     public func complete(_ request: LLMRequest) async throws -> LLMResponse {
-        let response = try await send(chatRequest(for: request))
-        guard let choice = response.choices.first else {
-            throw OpenAICompatibleError.noChoices(provider: profile.displayName)
+        let wire = chatRequest(for: request)
+
+        // Streamed unless the endpoint says it cannot. No call site wants tokens
+        // as they arrive — each needs a whole JSON document or a whole paragraph
+        // — so this exists only to keep bytes moving while the model reasons.
+        // A `gpt-5` planning call at high effort can spend minutes before its
+        // first byte, and that silence is what an intermediary drops.
+        guard capabilities(for: request.model).streaming else {
+            let response = try await send(wire)
+            guard let choice = response.choices.first else {
+                throw OpenAICompatibleError.noChoices(provider: profile.displayName)
+            }
+            if let refusal = choice.message.refusal, !refusal.isEmpty {
+                throw OpenAICompatibleError.refused(
+                    provider: profile.displayName, message: refusal)
+            }
+            return LLMResponse(
+                text: choice.message.content,
+                stopReason: choice.finishReason,
+                usage: response.usage.map {
+                    TokenUsage(
+                        inputTokens: $0.promptTokens,
+                        outputTokens: $0.completionTokens,
+                        cacheReadTokens: $0.promptTokensDetails?.cachedTokens,
+                        cacheWriteTokens: nil)
+                })
         }
-        // A refusal carries a 200 and a null content, so an unchecked read
-        // would report it as "the model returned nothing" and retry into the
-        // same wall.
-        if let refusal = choice.message.refusal, !refusal.isEmpty {
+
+        let streamed = try await stream(chatRequest(for: request, streaming: true))
+        if let refusal = streamed.refusal, !refusal.isEmpty {
             throw OpenAICompatibleError.refused(
                 provider: profile.displayName, message: refusal)
         }
         return LLMResponse(
-            text: choice.message.content,
-            stopReason: choice.finishReason,
-            usage: response.usage.map {
-                TokenUsage(
-                    inputTokens: $0.promptTokens,
-                    outputTokens: $0.completionTokens,
-                    cacheReadTokens: $0.promptTokensDetails?.cachedTokens,
-                    // No equivalent: caching here is automatic, so there is no
-                    // separately-priced write to report.
-                    cacheWriteTokens: nil)
-            })
+            text: streamed.text,
+            stopReason: streamed.stopReason,
+            usage: streamed.usage)
+    }
+
+    /// Consumes a streamed chat completion and returns what it added up to.
+    ///
+    /// One chunk shape throughout, unlike Anthropic's typed events: content
+    /// arrives at `choices[0].delta.content`, the stop reason on whichever chunk
+    /// carries it, and usage in a final chunk that has no choices at all — which
+    /// is why indexing `choices[0]` unconditionally would crash on the one chunk
+    /// holding the numbers.
+    func stream(_ body: ChatRequest) async throws -> StreamedResponse {
+        var urlReq = URLRequest(url: profile.baseURL.appendingPathComponent("chat/completions"))
+        urlReq.httpMethod = "POST"
+        urlReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        try authorized(&urlReq)
+        urlReq.httpBody = try Self.encoder.encode(body)
+
+        let (bytes, urlResponse) = try await session.bytes(for: urlReq)
+        let http = urlResponse as! HTTPURLResponse
+        guard (200..<300).contains(http.statusCode) else {
+            var errorBody = Data()
+            for try await byte in bytes { errorBody.append(byte) }
+            throw OpenAICompatibleError.http(
+                provider: profile.displayName,
+                status: http.statusCode,
+                body: String(data: errorBody, encoding: .utf8) ?? "<binary>")
+        }
+
+        var out = StreamedResponse()
+        for try await line in bytes.lines {
+            Self.apply(line, to: &out)
+        }
+        return out
+    }
+
+    /// Folds one SSE line into the running result.
+    ///
+    /// Separate from the network loop so `stream-check` can drive it with canned
+    /// chunks — a mistyped field name here yields no text, which is
+    /// indistinguishable from a model that said nothing.
+    public static func apply(_ line: String, to out: inout StreamedResponse) {
+        guard let payload = ServerSentEvents.payload(of: line),
+              let data = payload.data(using: .utf8)
+        else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let chunk = try? decoder.decode(ChatChunk.self, from: data) else { return }
+
+        // `choices` is empty on the final usage chunk, so this cannot index
+        // unconditionally — that one chunk carries all the token counts.
+        if let choice = chunk.choices?.first {
+            if let content = choice.delta?.content { out.text += content }
+            if let refusal = choice.delta?.refusal {
+                out.refusal = (out.refusal ?? "") + refusal
+            }
+            if let finish = choice.finishReason { out.stopReason = finish }
+        }
+        if let usage = chunk.usage {
+            out.usage.inputTokens = usage.promptTokens
+            out.usage.outputTokens = usage.completionTokens
+            out.usage.cacheReadTokens = usage.promptTokensDetails?.cachedTokens
+        }
+    }
+
+    /// The whole fold, for a stream already in hand.
+    public static func accumulate(_ lines: [String]) -> StreamedResponse {
+        var out = StreamedResponse()
+        for line in lines { apply(line, to: &out) }
+        return out
     }
 
     /// The neutral request, in OpenAI's spelling. Separate from `complete` so
     /// `provider-check` can assert the bytes without spending a call.
-    public func chatRequest(for request: LLMRequest) -> ChatRequest {
+    public func chatRequest(
+        for request: LLMRequest, streaming: Bool = false
+    ) -> ChatRequest {
         let capabilities = capabilities(for: request.model)
 
         var messages: [ChatRequest.Message] = []
@@ -175,7 +270,9 @@ extension OpenAICompatibleClient: LLMProvider {
             },
             // The five levels here are all valid values of `reasoning_effort`,
             // so this passes straight through with no clamping.
-            reasoningEffort: effort?.rawValue
+            reasoningEffort: effort?.rawValue,
+            stream: streaming ? true : nil,
+            streamOptions: streaming ? .init() : nil
         )
     }
 
@@ -232,6 +329,15 @@ public struct ChatRequest: Encodable {
     public var maxCompletionTokens: Int
     public var responseFormat: ResponseFormat?
     public var reasoningEffort: String?
+    /// Set by the client, not by callers — see `OpenAICompatibleClient.complete`.
+    public var stream: Bool?
+    /// Without this a streamed response reports no usage at all: the token
+    /// counts arrive in a final chunk that is only sent when asked for.
+    public var streamOptions: StreamOptions?
+
+    public struct StreamOptions: Encodable {
+        public var includeUsage = true
+    }
 
     public struct Message: Encodable {
         public var role: String
@@ -248,6 +354,23 @@ public struct ChatRequest: Encodable {
             /// constraint, which is the whole reason to send one.
             public var strict = true
             public var schema: JSONValue
+        }
+    }
+}
+
+/// One streamed chunk. Every field is optional because the final usage chunk
+/// carries no choices, and intermediate chunks carry no usage.
+struct ChatChunk: Decodable {
+    let choices: [Choice]?
+    let usage: ChatResponse.Usage?
+
+    struct Choice: Decodable {
+        let delta: Delta?
+        let finishReason: String?
+
+        struct Delta: Decodable {
+            let content: String?
+            let refusal: String?
         }
     }
 }

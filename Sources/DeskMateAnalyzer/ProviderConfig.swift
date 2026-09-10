@@ -67,6 +67,7 @@ public struct ProviderConfig: Decodable, Equatable {
             public var explicitPromptCaching: Bool?
             public var reasoningEffort: Bool?
             public var contextTokens: Int?
+            public var streaming: Bool?
         }
     }
 
@@ -163,6 +164,7 @@ extension ProviderConfig.Entry {
             if let v = capabilities.explicitPromptCaching { caps.explicitPromptCaching = v }
             if let v = capabilities.reasoningEffort { caps.reasoningEffort = v }
             if let v = capabilities.contextTokens { caps.contextTokens = v }
+            if let v = capabilities.streaming { caps.streaming = v }
             profile.defaultCapabilities = caps
             profile.capabilityOverrides = []
         }

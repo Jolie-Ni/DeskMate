@@ -267,6 +267,7 @@ reconstruct, and leaking it would make the test pass for the wrong reason.
 | `verify <db>` | reports what local clustering sees — no API call |
 | `analyze <db> [days]` | runs the real pipeline against a fixture (**spends API credit**) |
 | `score <derived-dir> <db>` | scores what was found against what was planted, via `WorkflowComparator` rather than text match |
+| `sweep <derived-dir> <fixture> <spec.json> [--repeats N] [--go]` | runs the pipeline under several provider configurations and puts recall, tokens and wall clock side by side. Prints the plan and stops unless `--go` (**spends real credit, once per configuration per repeat**) |
 | `excerpt <db> [limit]` | dumps the OCR text a run would actually send |
 | `share-preview <db> [--json] [--emit]` | shows the exact `SharePayload` bytes for a workflow |
 | `sharing-check` | exercises the sharing state machine and the soft-delete guarantee on a throwaway database |
@@ -279,6 +280,8 @@ reconstruct, and leaking it would make the test pass for the wrong reason.
 | `provider-verify` | resolves the configured provider, prints its per-role models and capabilities, checks the credentials, and confirms the endpoint actually serves each role's model (**network**, no tokens spent) |
 | `provider-smoke` | one small structured call per request shape, through the whole stack — schema accepted, effort tolerated, answer decoded (**spends a few cents**) |
 | `json-check` | structured-output recovery: the extraction scan, and that `completeParsed` reaches for it only after a decode fails. Runs against a stub provider, so no API call |
+| `metering-check` | that `MeteredProvider` counts calls, tokens and time per model, including under the concurrency the planning stage creates. Runs against a stub, so no API call |
+| `stream-check` | SSE reassembly for both providers, driven by canned events: envelope edge cases, fragment concatenation, usage extraction, and the traps — thinking-delta contamination, a mid-stream error after a 200, unknown event types, and OpenAI's empty-choices usage chunk. No API call |
 | `config-check` | `providers.json`: parsing, patching a built-in, defining a custom endpoint, the refusals, and that the environment outranks the file. Also the migration promise — no config file behaves exactly as before. Refuses to run without `DESKMATE_STORAGE_DIR`, since it writes and deletes real config and key files |
 | `team enroll <code> <email> <name>` / `team status` / `team disconnect` | hub round trips against a real server |
 | `capabilities` / `capabilities check` | print the bundled capability catalog, or check it against the live one |
@@ -491,6 +494,67 @@ implemented yet; they need a URLSession delegate and a request signer.
 Both clients keep their translation (`messagesRequest(for:)` /
 `chatRequest(for:)`) separate from `complete`, so `provider-check` can assert
 the wire format without spending a call.
+
+**Requests stream.** Not for incremental output — no call site wants tokens as
+they arrive, since three need a whole JSON document and one needs a whole
+paragraph. It is a reliability property. A non-streamed request sends no bytes
+at all until the answer is finished, so a model thinking for six minutes is
+indistinguishable from a dead connection, and something in the middle usually
+decides it is the latter. Two GPT-5 runs died that way before this existed.
+
+`complete` accumulates the stream and returns the same `LLMResponse`, so nothing
+above the provider knows. `ModelCapabilities.streaming` lets a minimal
+self-hosted endpoint opt out, and both clients keep the non-streaming path for
+that case.
+
+The two vocabularies differ enough to be worth naming. Anthropic sends typed
+events, of which four matter — and `thinking_delta` arrives on the same
+`content_block_delta` event as `text_delta`, so folding it in would splice
+reasoning into the answer. An `error` event can also arrive *after* a 200.
+OpenAI sends one chunk shape, but its final usage chunk has an **empty**
+`choices` array, so indexing `choices[0]` unconditionally crashes on the one
+chunk carrying the token counts; it also needs `stream_options.include_usage`,
+without which a streamed response reports no usage at all and every cost figure
+would silently be zero.
+
+Because streaming keeps bytes moving, `timeoutIntervalForRequest` is a real idle
+timeout again — 300s, with a 1800s resource ceiling for a long analysis.
+
+### Comparing providers
+
+Model-agnostic means output quality now varies with configuration, and the only
+honest way to say which models clear the bar is to measure. `sweep` runs the
+real pipeline against one fixture under several configurations and reports what
+each recovered, spent, and took.
+
+```json
+[
+  { "label": "claude",         "provider": "anthropic" },
+  { "label": "gpt-5",          "provider": "openai" },
+  { "label": "cheap reasoner", "provider": "openai",
+    "models": { "reasoning": "gpt-5-mini" } }
+]
+```
+
+Each configuration gets its own copy of the fixture, because `analyze` writes
+suggestions and caches labels into the database it reads — sharing one file
+would let the first configuration's cached labels serve the second, which is
+exactly what is under comparison.
+
+Every configuration is resolved before any of them runs, so a missing key is
+found for free rather than after three paid runs. A `DESKMATE_MODEL_*` variable
+set in the shell is refused outright: it outranks every spec, which would
+quietly make all configurations identical and the comparison a table of ties.
+
+`--repeats N` runs each configuration N times and adds a per-configuration
+spread. The models are non-deterministic, and a configuration that recovers 4
+then 1 is not a 2.5-recall configuration — it is an unreliable one, which a
+single run cannot show.
+
+Cost is reported in tokens rather than money, with cache reads kept separate
+since they are billed at a fraction of the input rate. A price table would have
+to track several vendors' pricing pages and would be wrong the week one of them
+changed; these numbers are exactly what a current price list needs.
 
 ### Configuring a provider
 

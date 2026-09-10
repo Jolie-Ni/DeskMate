@@ -135,6 +135,18 @@ public struct ModelCapabilities: Equatable {
     public var explicitPromptCaching: Bool
     /// Thinking depth can be asked for.
     public var reasoningEffort: Bool
+    /// The endpoint can stream its answer.
+    ///
+    /// Not a feature so much as a reliability property. A non-streamed request
+    /// sends no bytes at all until the whole answer is ready, so a model that
+    /// thinks for six minutes is indistinguishable from a dead connection — and
+    /// something in the middle usually decides it is the latter. Streaming
+    /// keeps bytes moving, which is what makes an idle timeout mean what it
+    /// says.
+    ///
+    /// True almost everywhere; the exception is a minimal self-hosted server,
+    /// which is why a profile can say otherwise.
+    public var streaming: Bool
     /// Total context window, in tokens. What the evidence and excerpt budgets
     /// should eventually be derived from rather than hardcoded.
     public var contextTokens: Int
@@ -143,12 +155,14 @@ public struct ModelCapabilities: Equatable {
         structuredOutput: Bool,
         explicitPromptCaching: Bool,
         reasoningEffort: Bool,
-        contextTokens: Int
+        contextTokens: Int,
+        streaming: Bool = true
     ) {
         self.structuredOutput = structuredOutput
         self.explicitPromptCaching = explicitPromptCaching
         self.reasoningEffort = reasoningEffort
         self.contextTokens = contextTokens
+        self.streaming = streaming
     }
 }
 

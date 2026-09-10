@@ -16,14 +16,11 @@ public struct AnalysisResult {
     /// Sessions sent to the labeling model this run. The rest reused a cached label.
     public let sessionsLabeledThisRun: Int
     public let sessionsReusedFromCache: Int
+    /// What the run spent, per model. See `MeteredProvider`.
     public let usage: UsageSummary
-
-    public struct UsageSummary {
-        public var labelingInputTokens: Int = 0
-        public var labelingOutputTokens: Int = 0
-        public var detectionInputTokens: Int = 0
-        public var detectionOutputTokens: Int = 0
-    }
+    /// Wall clock for the whole run, including the local clustering that spends
+    /// nothing — so this is what someone waited, not what they were billed for.
+    public let elapsed: TimeInterval
 }
 
 public enum AnalysisProgress {
@@ -38,18 +35,23 @@ public enum AnalysisProgress {
 
 public actor AnalysisRunner {
     private let storage: Storage
-    private let provider: any LLMProvider
+    /// The provider every stage actually uses: the one passed in, wrapped so
+    /// the run can report what it spent. Wrapping here rather than at the call
+    /// sites means no stage has to know it is being measured.
+    private let provider: MeteredProvider
     private let lookbackDays: Int
 
     public init(storage: Storage, provider: any LLMProvider, lookbackDays: Int = 7) {
         self.storage = storage
-        self.provider = provider
+        self.provider = MeteredProvider(wrapping: provider)
         self.lookbackDays = lookbackDays
     }
 
     public func run(
         progress: @escaping @Sendable (AnalysisProgress) -> Void
     ) async throws -> AnalysisResult {
+        let started = Date()
+
         // 1. Pull captures
         progress(.clustering)
         guard let since = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date())
@@ -81,7 +83,8 @@ public actor AnalysisRunner {
                 discardedAsDismissed: 0,
                 sessionsLabeledThisRun: 0,
                 sessionsReusedFromCache: 0,
-                usage: .init()
+                usage: provider.summary(),
+                elapsed: Date().timeIntervalSince(started)
             )
         }
 
@@ -228,7 +231,8 @@ public actor AnalysisRunner {
             discardedAsDismissed: toAutoDismiss.count,
             sessionsLabeledThisRun: unlabeled.count,
             sessionsReusedFromCache: sessions.count - unlabeled.count,
-            usage: .init()  // TODO: thread Usage through if we ever surface cost in UI
+            usage: provider.summary(),
+            elapsed: Date().timeIntervalSince(started)
         )
     }
 

@@ -258,6 +258,44 @@ enum ProviderCheck {
 
         // The VPC case, exercised now so the shape is known to work rather than
         // merely intended: an arbitrary host, no key, and its own capabilities.
+        // The bodies asserted above are the non-streaming translation, which is
+        // no longer what `complete` sends. These cover the difference, so the
+        // assertions describe the real wire again.
+        print("streaming bodies")
+        let streamedAnthropic = try? JSONSerialization.jsonObject(
+            with: JSONEncoder.snakeCased.encode(
+                provider.messagesRequest(
+                    for: LLMRequest(model: "claude-opus-4-7", maxOutputTokens: 100,
+                                    system: "SYS", prompt: "USER"),
+                    streaming: true))) as? NSDictionary
+        check(streamedAnthropic?["stream"] as? Bool == true,
+              "anthropic sets stream when streaming")
+        check(body(LLMRequest(model: "claude-opus-4-7", maxOutputTokens: 100,
+                              system: "SYS", prompt: "USER"))["stream"] == nil,
+              "and omits it when not")
+
+        let streamedOpenAI = try? JSONSerialization.jsonObject(
+            with: OpenAICompatibleClient.encoder.encode(
+                openAI.chatRequest(
+                    for: LLMRequest(model: "gpt-5", maxOutputTokens: 100,
+                                    system: "SYS", prompt: "USER"),
+                    streaming: true))) as? NSDictionary
+        check(streamedOpenAI?["stream"] as? Bool == true,
+              "openai sets stream when streaming")
+        // Without this the streamed response reports no usage at all, and every
+        // cost number in a sweep would quietly be zero.
+        check((streamedOpenAI?["stream_options"] as? NSDictionary)?["include_usage"] as? Bool
+                == true,
+              "openai asks for usage in the stream")
+        check(openAIBody(LLMRequest(model: "gpt-5", maxOutputTokens: 100,
+                                    system: "SYS", prompt: "USER"))["stream"] == nil,
+              "and omits both when not")
+
+        print("streaming is declared")
+        check(provider.capabilities(for: "claude-opus-4-7").streaming,
+              "anthropic declares streaming")
+        check(openAI.capabilities(for: "gpt-5").streaming, "openai declares streaming")
+
         print("profiles are user-definable")
         var vpc = ProviderProfile.openAI
         vpc.id = "acme-internal"
@@ -445,5 +483,14 @@ enum ProviderCheck {
         case .unavailable(let reason): print(reason)
         }
         exit(0)
+    }
+}
+
+extension JSONEncoder {
+    /// The encoding both clients put on the wire.
+    static var snakeCased: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        return encoder
     }
 }

@@ -26,6 +26,20 @@ public enum ProviderFactory {
     }
 
     public static func resolve() -> Resolution {
+        resolve(providerID: nil, roleModels: [:])
+    }
+
+    /// Resolve a specific provider with specific models, ignoring what the
+    /// environment and the config file say about *which* one to use.
+    ///
+    /// For tooling that runs several configurations inside one process — a
+    /// sweep cannot set `DESKMATE_PROVIDER` between runs, because a process
+    /// cannot safely mutate its own environment while other work reads it. The
+    /// file is still consulted for how to *reach* each provider, so a sweep can
+    /// name a self-hosted endpoint that only the config knows about.
+    public static func resolve(
+        providerID: String?, roleModels: [ModelRole: String]
+    ) -> Resolution {
         let config: ProviderConfig
         do {
             config = try ProviderConfig.load()
@@ -36,12 +50,12 @@ public enum ProviderFactory {
             return .unavailable(error.localizedDescription)
         }
 
-        let id = selectedProviderID(config)
+        let id = providerID ?? selectedProviderID(config)
         switch id {
         case "anthropic":
-            return resolveAnthropic(config.entry(for: id))
+            return resolveAnthropic(config.entry(for: id), overrides: roleModels)
         default:
-            return resolveOpenAICompatible(id: id, config: config)
+            return resolveOpenAICompatible(id: id, config: config, overrides: roleModels)
         }
     }
 
@@ -59,15 +73,17 @@ public enum ProviderFactory {
 
     // MARK: - Anthropic
 
-    private static func resolveAnthropic(_ entry: ProviderConfig.Entry?) -> Resolution {
+    private static func resolveAnthropic(
+        _ entry: ProviderConfig.Entry?, overrides: [ModelRole: String]
+    ) -> Resolution {
         guard let key = APIKeyStore.resolve(for: "anthropic") else {
             return .unavailable(
                 "No Anthropic API key. Add one in Settings, or export ANTHROPIC_API_KEY.")
         }
         var client = AnthropicClient(apiKey: key)
-        if let overrides = entry?.roleOverrides {
-            client.roleModels = client.roleModels.applying(overrides)
-        }
+        client.roleModels = client.roleModels
+            .applying(entry?.roleOverrides ?? [:])
+            .applying(overrides)
         return .ready(client)
     }
 
@@ -77,7 +93,7 @@ public enum ProviderFactory {
     /// profile; any other id has to be described by the file, because there is
     /// nothing to guess — a self-hosted endpoint's hostname is not derivable.
     private static func resolveOpenAICompatible(
-        id: String, config: ProviderConfig
+        id: String, config: ProviderConfig, overrides: [ModelRole: String]
     ) -> Resolution {
         let entry = config.entry(for: id)
 
@@ -111,6 +127,10 @@ public enum ProviderFactory {
         }
 
         if let entry { profile = entry.applied(to: profile) }
+        // Before the completeness check below, not after: a caller that supplies
+        // the models itself has satisfied the requirement, and refusing it
+        // because the file happened to be silent would be wrong.
+        profile.roleModels = profile.roleModels.applying(overrides)
 
         // A base URL from the environment overrides whatever the file said, and
         // marks the profile as no longer being the vendor it started from.

@@ -52,9 +52,45 @@ enum RunAnalysis {
         procedures surfaced        \(result.suggestionsCreated)
         dropped, weak evidence     \(result.discardedForWeakEvidence)
         dropped, already dismissed \(result.discardedAsDismissed)
+        """)
+
+        report(result.usage)
+
+        print("""
 
         assessment: \(result.assessment)
         """)
+    }
+
+    /// What the run spent, per model.
+    ///
+    /// Tokens rather than money. A price table would have to be maintained
+    /// against several vendors' pricing pages and would be wrong the week one
+    /// of them changed — and the numbers below are exactly what a current price
+    /// list needs, with cache reads kept separate because they are billed at a
+    /// fraction of the input rate.
+    static func report(_ usage: UsageSummary) {
+        guard !usage.isEmpty else {
+            print("\nno model calls — nothing to report")
+            return
+        }
+        print("\n── tokens ──")
+        print("  \("model".padded(28))\("calls".padded(7))\("in".padded(10))"
+            + "\("out".padded(10))\("cache r".padded(10))\("cache w".padded(10))secs")
+        for row in usage.rows {
+            let u = row.usage
+            print("  \(row.model.padded(28))\("\(u.calls)".padded(7))"
+                + "\("\(u.inputTokens)".padded(10))\("\(u.outputTokens)".padded(10))"
+                + "\("\(u.cacheReadTokens)".padded(10))\("\(u.cacheWriteTokens)".padded(10))"
+                + String(format: "%.1f", u.seconds))
+        }
+        if usage.rows.count > 1 {
+            print("  \("total".padded(28))\("\(usage.totalCalls)".padded(7))"
+                + "\("\(usage.totalInputTokens)".padded(10))"
+                + "\("\(usage.totalOutputTokens)".padded(10))"
+                + "\("\(usage.totalCacheReadTokens)".padded(10))"
+                + "\("\(usage.totalCacheWriteTokens)".padded(10))")
+        }
     }
 }
 
@@ -62,4 +98,12 @@ enum RunAnalysis {
 func print(_ s: String, flush: Bool) {
     Swift.print(s)
     if flush { fflush(stdout) }
+}
+
+extension String {
+    /// Left-aligned in a fixed column. Long values overflow rather than being
+    /// cut — a truncated model id is worse than a ragged column.
+    func padded(_ width: Int) -> String {
+        count >= width ? self + " " : padding(toLength: width, withPad: " ", startingAt: 0)
+    }
 }
