@@ -337,6 +337,33 @@ enum ProviderCheck {
         exit(ok ? 0 : 1)
     }
 
+    /// What this machine's configuration actually resolves to, for a person.
+    ///
+    /// Deliberately not `provider-print`, which looks like the same thing and is
+    /// not: that one is a child process whose single line of stdout `resolved`
+    /// parses, so anything added to it breaks the checks above rather than
+    /// failing to compile. This is the one to read after editing
+    /// `providers.json`.
+    ///
+    /// Prints the ecosystem alongside the provider because the two are chosen
+    /// separately and only one of them is loud: a wrong provider surfaces as an
+    /// auth error, while a wrong ecosystem just produces confident advice about
+    /// a product you do not have.
+    static func printResolvedConfig() {
+        switch ProviderFactory.resolve() {
+        case .ready(let provider):
+            print("provider: \(provider.displayName) (\(provider.id))")
+            for role in ModelRole.allCases {
+                print("  \(role.rawValue): \(provider.model(for: role))")
+            }
+        case .unavailable(let reason):
+            print("provider: unavailable — \(reason)")
+        }
+        let pack = EcosystemFactory.resolve()
+        print("suggestions target: \(pack.ecosystem.displayName) — \(pack.reason)")
+        exit(0)
+    }
+
     /// Re-runs this binary as `provider-print` with `env` applied, and returns
     /// the resolved provider id — or the unavailable reason. A child process
     /// because the environment of a running process is not something to mutate

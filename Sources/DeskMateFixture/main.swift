@@ -214,6 +214,11 @@ if args.count == 2, args[1] == "provider-smoke" {
 if args.count == 2, args[1] == "provider-verify" {
     runBlockingOrExit { await ProviderCheck.verify() }
 }
+if args.count == 2, args[1] == "config-print" {
+    ProviderCheck.printResolvedConfig()
+}
+// Machine-readable and parsed by `provider-check`: one line, nothing else.
+// `config-print` is the one for people.
 if args.count == 2, args[1] == "provider-print" {
     ProviderCheck.printResolvedProvider()
 }

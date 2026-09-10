@@ -42,7 +42,7 @@ brew install --cask jolie-ni/tap/deskmate
 
 Builds are signed with a Developer ID certificate and notarized by Apple, with the ticket stapled into both the app and the disk image — so it opens on a double-click, offline, with no security dialog to dismiss.
 
-On first launch DeskMate asks for your Anthropic API key and checks it against the API before saving. You can skip it — capture never touches the network and works with no key at all — and add one later in Settings.
+On first launch DeskMate asks for your Anthropic API key and checks it against the API before saving. You can skip it — capture never touches the network and works with no key at all — and add one later in Settings. Anthropic is only the default; see [Choosing your model](#choosing-your-model) to point it somewhere else.
 
 Then press **Start**, top right. That spawns the capture daemon; **Stop** ends it. Closing the window does not stop recording — stopping is meant to be a deliberate act.
 
@@ -61,6 +61,69 @@ Let it run for three or four working days before you look at the dashboard. The 
 
 ---
 
+## Choosing your model
+
+Two separate choices, and it is worth knowing they are separate.
+
+**Which model reads your week.** Anthropic by default. Nothing to configure if that is what you want.
+
+**Which platform the suggestions are written for.** Claude by default, and it follows the first choice unless you say otherwise. This is what decides whether a suggestion says "enable the Gmail connector in Claude" or "build this as a ChatGPT workspace agent" — the two platforms can do genuinely different things, so a plan written for the wrong one wastes your time.
+
+Both live in one file, `providers.json`, next to your database at `~/Library/Application Support/DeskMate/`. There is no such file until you make one, and no file means the defaults above.
+
+To use OpenAI for both:
+
+```json
+{ "selected": "openai" }
+```
+
+Save your key at `api-key-openai` in that same folder, or export `OPENAI_API_KEY`. Anthropic's key keeps its original name, `api-key`, so switching does not disturb it and switching back needs no re-entry.
+
+To name a particular model, without changing anything else:
+
+```json
+{ "providers": { "anthropic": { "models": { "reasoning": "claude-opus-5" } } } }
+```
+
+Three jobs, three models. Labeling runs on every session and wants something cheap, reasoning is the one that writes the suggestions, narration writes the daily summary. Name only the jobs you care about and the rest keep their defaults.
+
+To run a model inside your own network and still get suggestions written for ChatGPT:
+
+```json
+{
+  "selected": "acme-vpc",
+  "ecosystem": "openai",
+  "providers": {
+    "acme-vpc": {
+      "displayName": "Acme internal vLLM",
+      "baseURL": "https://llm.internal.acme.corp/v1",
+      "auth": "none",
+      "models": {
+        "labeling":  "Qwen3-8B-Instruct",
+        "reasoning": "Qwen3-72B-Instruct",
+        "narration": "Qwen3-72B-Instruct"
+      }
+    }
+  }
+}
+```
+
+A provider of your own has to give a `baseURL` and all three models, since there is nothing to guess. `auth` is `bearer`, `none`, or `header`.
+
+`ecosystem` takes `claude`, `openai`, or `neutral`. Pick `neutral` and suggestions stop naming any platform at all — you get shell scripts, scheduled jobs, and the app's own API, which is the honest answer when the model is one you host yourself. Leave `ecosystem` out and it follows `selected`.
+
+Nothing secret goes in this file, so it is safe to paste into a bug report. Keys stay in their own `0600` files beside it. If you get the file wrong, DeskMate says so and refuses to run rather than quietly falling back and spending against the wrong key.
+
+To see what your file actually did, build from source and run:
+
+```bash
+.build/release/DeskMateFixture config-print
+```
+
+It prints the provider, the model chosen for each of the three jobs, and which platform your suggestions will target — without calling the API or spending anything.
+
+---
+
 ## What it does
 
 **The agent** runs locally and takes a screenshot every 30 seconds while you are not idle. It records the frontmost app, the window title and the browser URL, OCRs the screenshot on-device with Vision, redacts personal information, and writes to a local database. The screenshot stays on disk and is deleted after 30 days.
@@ -76,9 +139,9 @@ This is a tool that watches your screen. You should be suspicious of it. Here is
 - **The capture path never touches the network.** 
 - **There is no telemetry.** Nothing reports back to the developer. Everything is hosted locally. 
 - **Your data is one file**, at `~/Library/Application Support/DeskMate/deskmate.sqlite`, with the screenshots beside it in `screenshots/`. Open it with any SQLite browser. Delete the lot with `rm -rf ~/Library/Application\ Support/DeskMate`.
-- **Your API key is a `0600` file** in that same folder, at `api-key` — readable by your account and nobody else. Not the Keychain, because the nightly summary job runs unattended and Keychain access from a second binary would stop to ask a question at 23:59. `ANTHROPIC_API_KEY` still overrides it when set. Remove it from Settings, or with `rm ~/Library/Application\ Support/DeskMate/api-key`.
+- **Your API key is a `0600` file** in that same folder, at `api-key` — readable by your account and nobody else. Not the Keychain, because the nightly summary job runs unattended and Keychain access from a second binary would stop to ask a question at 23:59. `ANTHROPIC_API_KEY` still overrides it when set. Any other provider you configure keeps its key in the same shape, at `api-key-openai` and so on. Remove it from Settings, or with `rm ~/Library/Application\ Support/DeskMate/api-key`.
 - **Personal info gets redacted.** Things like email addresses, 13–16 digit card numbers, US SSNs, `password:` and `api_key:` lines, `sk-` API keys, and hex tokens of 32 characters or more.
-- **What does leave the machine, and only when you ask for it:** clicking *Analyze* sends text digests to the Claude API: app names, URL hosts and paths, window titles, and a roughly 200 character redacted OCR snippet per session.
+- **What does leave the machine, and only when you ask for it:** clicking *Analyze* sends text digests to whichever model provider you configured — the Claude API unless you changed it, and an endpoint of your own choosing if you did. It sends app names, URL hosts and paths, window titles, and a roughly 200 character redacted OCR snippet per session.
 
 ## Current limitations
 
@@ -94,7 +157,7 @@ If you have run this for a week and it told you something true, I would like to 
 
 ## Documentation
 
-[`docs/reference.md`](docs/reference.md) has the build details, the analysis pipeline stage by stage, every tunable and environment variable, and the test harness. The team hub has [its own README](server/README.md).
+[`docs/reference.md`](docs/reference.md) has the build details, the analysis pipeline stage by stage, the full provider and ecosystem configuration, every tunable and environment variable, and the test harness. The team hub has [its own README](server/README.md).
 
 ## License
 
