@@ -71,13 +71,48 @@ Two separate choices, and it is worth knowing they are separate.
 
 Both live in one file, `providers.json`, next to your database at `~/Library/Application Support/DeskMate/`. There is no such file until you make one, and no file means the defaults above.
 
-To use OpenAI for both:
+### Setting up with an OpenAI key
 
-```json
-{ "selected": "openai" }
+Three steps, all inside `~/Library/Application Support/DeskMate/`.
+
+**1. Save the key by hand.** Settings cannot do this for you. That screen checks the key against Anthropic's format and always writes Anthropic's file, so there is no OpenAI field on it.
+
+```bash
+cd ~/Library/Application\ Support/DeskMate
+echo 'sk-proj-your-real-key' > api-key-openai
+chmod 600 api-key-openai
 ```
 
-Save your key at `api-key-openai` in that same folder, or export `OPENAI_API_KEY`. Anthropic's key keeps its original name, `api-key`, so switching does not disturb it and switching back needs no re-entry.
+The newline `echo` leaves behind is trimmed on read and does no harm. The `chmod` does matter: the file holds a secret, and nothing enforces the mode when you create it yourself.
+
+Do not reach for `OPENAI_API_KEY` in your shell. An app you double-click inherits launchd's environment rather than your terminal's, so an exported variable is invisible to it — which is the whole reason these key files exist. The variable works only if you launch DeskMate from a terminal.
+
+**2. Select the provider, and name the models.**
+
+```json
+{
+  "selected": "openai",
+  "providers": {
+    "openai": {
+      "models": {
+        "labeling":  "gpt-5.4-mini",
+        "reasoning": "gpt-5.6-sol",
+        "narration": "gpt-5.6-sol"
+      }
+    }
+  }
+}
+```
+
+`{ "selected": "openai" }` on its own is enough to switch, but write the `models` block anyway. The built-in defaults are a generation behind, and the reasoning model is the one you feel: pattern detection is a single call covering your whole week, sent at high reasoning effort. Anthropic gets `thinking: adaptive` there and decides for itself how hard to think. OpenAI gets a fixed `reasoning_effort: "high"`, and an older model takes that literally and spends minutes. A current model throttles itself the way adaptive thinking does.
+
+Model names move quickly, so check what your own account serves rather than trusting the list above.
+
+**3. Confirm it took.** Open Settings. When the active provider is not Anthropic, a banner reads "Analyze is using OpenAI" and tells you the key on that screen is Anthropic's and is not in use. That banner is your check, since `config-print` below only exists if you build from source. The change applies to your next *Analyze*.
+
+Your Anthropic key keeps its original name, `api-key`, so none of this disturbs it and switching back is a one-line edit with no key to re-enter.
+
+### Other combinations
 
 To name a particular model, without changing anything else:
 
@@ -139,7 +174,7 @@ This is a tool that watches your screen. You should be suspicious of it. Here is
 - **The capture path never touches the network.** 
 - **There is no telemetry.** Nothing reports back to the developer. Everything is hosted locally. 
 - **Your data is one file**, at `~/Library/Application Support/DeskMate/deskmate.sqlite`, with the screenshots beside it in `screenshots/`. Open it with any SQLite browser. Delete the lot with `rm -rf ~/Library/Application\ Support/DeskMate`.
-- **Your API key is a `0600` file** in that same folder, at `api-key` — readable by your account and nobody else. Not the Keychain, because the nightly summary job runs unattended and Keychain access from a second binary would stop to ask a question at 23:59. `ANTHROPIC_API_KEY` still overrides it when set. Any other provider you configure keeps its key in the same shape, at `api-key-openai` and so on. Remove it from Settings, or with `rm ~/Library/Application\ Support/DeskMate/api-key`.
+- **Your API key is a `0600` file** in that same folder, at `api-key` — readable by your account and nobody else. Not the Keychain, because the nightly summary job runs unattended and Keychain access from a second binary would stop to ask a question at 23:59. `ANTHROPIC_API_KEY` still overrides it, though only for a copy launched from a terminal — a double-clicked app never sees your shell's environment. Any other provider you configure keeps its key in the same shape, at `api-key-openai` and so on. Remove it from Settings, or with `rm ~/Library/Application\ Support/DeskMate/api-key`.
 - **Personal info gets redacted.** Things like email addresses, 13–16 digit card numbers, US SSNs, `password:` and `api_key:` lines, `sk-` API keys, and hex tokens of 32 characters or more.
 - **What does leave the machine, and only when you ask for it:** clicking *Analyze* sends text digests to whichever model provider you configured — the Claude API unless you changed it, and an endpoint of your own choosing if you did. It sends app names, URL hosts and paths, window titles, and a roughly 200 character redacted OCR snippet per session.
 
