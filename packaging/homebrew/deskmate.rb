@@ -16,8 +16,8 @@
 # app open. No `xattr` dance, which is just as well — Homebrew 6 removed the
 # `--no-quarantine` flag that used to be the alternative.
 cask "deskmate" do
-  version "0.2.0"
-  sha256 "4125b11edff2f81adc8b25235a417bf93c86df482b82f7277a7f78d303909ce9"
+  version "0.2.1"
+  sha256 "152d2f495f5229e00426f4da5437c6aa2f642e8ad0cf1060f4693fb615b8b763"
 
   url "https://github.com/Jolie-Ni/DeskMate/releases/download/v#{version}/DeskMate-#{version}.dmg"
   name "DeskMate"

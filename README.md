@@ -73,29 +73,26 @@ Both live in one file, `providers.json`, next to your database at `~/Library/App
 
 ### Setting up with an OpenAI key
 
-Three steps, all inside `~/Library/Application Support/DeskMate/`.
-
-**1. Save the key by hand.** Settings cannot do this for you. That screen checks the key against Anthropic's format and always writes Anthropic's file, so there is no OpenAI field on it.
+Two files, four commands, all in `~/Library/Application Support/DeskMate/`.
 
 ```bash
 cd ~/Library/Application\ Support/DeskMate
 echo 'sk-proj-your-real-key' > api-key-openai
 chmod 600 api-key-openai
+echo '{ "selected": "openai" }' > providers.json
 ```
 
-The newline `echo` leaves behind is trimmed on read and does no harm. The `chmod` does matter: the file holds a secret, and nothing enforces the mode when you create it yourself.
+That is the whole setup. All three jobs then run on `gpt-5.6-sol`, a current model that picks its own reasoning depth, so there is no `models` block to write. Add one only if you want something different — see [Other combinations](#other-combinations) below.
 
-Do not reach for `OPENAI_API_KEY` in your shell. An app you double-click inherits launchd's environment rather than your terminal's, so an exported variable is invisible to it — which is the whole reason these key files exist. The variable works only if you launch DeskMate from a terminal.
+Three things worth knowing about those commands.
 
-**2. Write `providers.json` in that same folder.** One line is the whole file.
+**Settings cannot save the key for you.** That screen checks what you paste against Anthropic's key format and always writes Anthropic's file, so there is no OpenAI field to look for. Hence `api-key-openai` by hand.
 
-```json
-{ "selected": "openai" }
-```
+**The `chmod` matters.** The file holds a secret, and nothing enforces the mode when you create it yourself. The newline `echo` leaves behind does not matter, since the key is trimmed when read.
 
-That is enough. All three jobs run on `gpt-5.6-sol`, which is a current model and picks its own reasoning depth. You only need a `models` block if you want something different — see [Other combinations](#other-combinations) below.
+**Do not reach for `OPENAI_API_KEY` in your shell.** An app you double-click inherits launchd's environment rather than your terminal's, so an exported variable is invisible to it — which is the whole reason these key files exist. The variable works only if you launch DeskMate from a terminal.
 
-**3. Confirm it took.** Open Settings. When the active provider is not Anthropic, a banner reads "Analyze is using OpenAI" and tells you the key on that screen is Anthropic's and is not in use. That banner is your check, since `config-print` below only exists if you build from source. The change applies to your next *Analyze*.
+To confirm it took, open Settings. When the active provider is not Anthropic, a banner reads "Analyze is using OpenAI" and tells you the key on that screen is Anthropic's and is not in use. That banner is your check, since `config-print` below only exists if you build from source. The change applies to your next *Analyze*.
 
 Your Anthropic key keeps its original name, `api-key`, so none of this disturbs it and switching back is a one-line edit with no key to re-enter.
 
