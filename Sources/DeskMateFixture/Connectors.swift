@@ -4,19 +4,35 @@ import DeskMateCore
 
 /// Refreshes the connector catalog and reports what it found, including which
 /// of the user's own apps it matched — the number that actually matters.
+///
+/// Takes an ecosystem because the two packs answer differently. Claude's list
+/// is scraped and this is how you re-scrape it. OpenAI's ships with the app, so
+/// there is nothing to fetch and the useful half of this report is the second
+/// half: what it matches against the apps someone actually uses.
 enum Connectors {
-    static func refresh(force: Bool, dbPath: String?) async throws {
-        let before = ConnectorCatalog.load()
-        let fetcher = ConnectorCatalogFetcher()
+    static func refresh(force: Bool, dbPath: String?, ecosystem: Ecosystem) async throws {
+        let before = ConnectorCatalog.load(for: ecosystem)
+        let fetcher = ConnectorCatalogFetcher(ecosystem: ecosystem)
 
-        let started = Date()
-        let catalog = try await fetcher.fetch()
-        try catalog.save()
-        let elapsed = Int(Date().timeIntervalSince(started))
+        let catalog: ConnectorCatalog
+        if ecosystem.connectorsAreFetched {
+            let started = Date()
+            catalog = try await fetcher.fetch()
+            try catalog.save(to: ecosystem.connectorCacheURL)
+            let elapsed = Int(Date().timeIntervalSince(started))
+            print("fetched \(catalog.entries.count) connectors in \(elapsed)s "
+                + "-> \(ecosystem.connectorCacheURL.path)")
+        } else if let bundled = before {
+            catalog = bundled
+            print("\(ecosystem.displayName) publishes no directory to fetch — "
+                + "reporting the \(catalog.entries.count) bundled entries, "
+                + "hand-checked \(catalog.fetchedAt.formatted(date: .abbreviated, time: .omitted))")
+        } else {
+            print("\(ecosystem.displayName) claims no connectors at all")
+            return
+        }
 
-        print("fetched \(catalog.entries.count) connectors in \(elapsed)s -> \(ConnectorCatalog.fileURL.path)")
-
-        if let before {
+        if let before, ecosystem.connectorsAreFetched {
             let old = Set(before.entries.map(\.slug))
             let new = Set(catalog.entries.map(\.slug))
             let added = new.subtracting(old), removed = old.subtracting(new)
@@ -43,7 +59,8 @@ enum Connectors {
         let ranked = buckets.sorted { $0.value > $1.value }
         let matches = catalog.matching(appsAndHosts: ranked.map(\.key))
 
-        print("\nyour apps/hosts in 30 days: \(ranked.count)   with a Claude connector: \(matches.count)")
+        print("\nyour apps/hosts in 30 days: \(ranked.count)   "
+            + "with a \(ecosystem.displayName) connector: \(matches.count)")
         for (app, n) in ranked.prefix(25) {
             guard let hit = matches[app] else { continue }
             print(String(format: "  %-26s %5d captures  ->  %@", (app as NSString).utf8String!, n, hit.name))

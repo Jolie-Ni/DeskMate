@@ -162,18 +162,29 @@ public actor AnalysisRunner {
             if isDuplicate { toAutoDismiss.append(suggestion) } else { toSurface.append(suggestion) }
         }
 
+        // Which platform the suggestions target. Resolved once per run rather
+        // than per plan: it cannot change mid-run, and every plan in a run must
+        // recommend the same platform or the week's suggestions contradict each
+        // other.
+        let ecosystem = EcosystemFactory.resolve().ecosystem
+
         // Refresh the connector catalog if it has gone stale. Deliberately on
         // the analysis path rather than the daemon: the daemon makes no network
         // calls and should stay that way, while this path is already talking to
         // the API. Failure is non-fatal — a stale catalog beats none, and no
         // catalog just means the planner works from its own knowledge.
-        var loadedCatalog = ConnectorCatalog.load()
-        if loadedCatalog == nil || loadedCatalog!.isStale() {
+        //
+        // Only packs that publish a directory get here. A pack whose list ships
+        // with the app is already as fresh as it will get, and one that makes no
+        // integration claims has nothing to fetch.
+        var loadedCatalog = ConnectorCatalog.load(for: ecosystem)
+        if ecosystem.connectorsAreFetched, loadedCatalog == nil || loadedCatalog!.isStale() {
             progress(.refreshingConnectors)
-            loadedCatalog = await ConnectorCatalogFetcher().refreshIfNeeded()
+            loadedCatalog = await ConnectorCatalogFetcher(ecosystem: ecosystem).refreshIfNeeded()
         }
         // Frozen for the task group below, for the same reason as `labels`.
         let catalog = loadedCatalog
+        let capabilities = CapabilityCatalog.bundled(for: ecosystem)
 
         // 5. One automation plan per surviving procedure, each in its own call
         // with the raw evidence behind it. Concurrent because they are
@@ -189,8 +200,9 @@ public actor AnalysisRunner {
                         // is still valid without a recommendation attached.
                         let plan = try? await planner.plan(
                             for: suggestion, sessions: sessions,
-                            labels: labels, storage: storage, catalog: catalog,
-                            capabilities: CapabilityCatalog.bundled())
+                            labels: labels, storage: storage,
+                            ecosystem: ecosystem, catalog: catalog,
+                            capabilities: capabilities)
                         return (i, plan)
                     }
                 }

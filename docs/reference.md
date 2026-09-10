@@ -98,7 +98,7 @@ DeskMateDashboard  ──►  cluster into sessions  ──►  model provider  
 
 **Capture loop** (`DeskMateDaemon`) — every 30 seconds, if you're not idle, it grabs the frontmost app name, window title, browser URL (via AppleScript), and a screenshot. Vision framework OCRs the image locally, a regex pass redacts secrets, and the row lands in SQLite.
 
-**Analysis** (`DeskMateAnalyzer`) — runs only when you click *Analyze* in the dashboard. Captures from the last 7 days are clustered locally into sessions (same app/host, gaps under 5 minutes, sessions shorter than 60s dropped). Session digests then go to Claude in three passes: Haiku labels each session in batches of 12, Opus reads the labeled timeline and proposes procedures, and Opus writes an automation plan for each proposal that survives. Between the last two the Claude connector directory is refreshed — at most weekly — so a plan only names connectors that actually exist.
+**Analysis** (`DeskMateAnalyzer`) — runs only when you click *Analyze* in the dashboard. Captures from the last 7 days are clustered locally into sessions (same app/host, gaps under 5 minutes, sessions shorter than 60s dropped). Session digests then go to Claude in three passes: Haiku labels each session in batches of 12, Opus reads the labeled timeline and proposes procedures, and Opus writes an automation plan for each proposal that survives. Between the last two the target platform's connector list is refreshed — at most weekly, and only for a platform that publishes a directory — so a plan only names connectors that actually exist.
 
 Two things keep a re-run cheap and quiet. Labels are cached in the database under a session id that is a stable hash of (start, bucket), so re-clustering doesn't pay Haiku twice for the same session. And a proposal matching a workflow you dismissed in the last 7 days is recorded as auto-dismissed rather than shown again.
 
@@ -282,10 +282,11 @@ reconstruct, and leaking it would make the test pass for the wrong reason.
 | `json-check` | structured-output recovery: the extraction scan, and that `completeParsed` reaches for it only after a decode fails. Runs against a stub provider, so no API call |
 | `metering-check` | that `MeteredProvider` counts calls, tokens and time per model, including under the concurrency the planning stage creates. Runs against a stub, so no API call |
 | `stream-check` | SSE reassembly for both providers, driven by canned events: envelope edge cases, fragment concatenation, usage extraction, and the traps — thinking-delta contamination, a mid-stream error after a 200, unknown event types, and OpenAI's empty-choices usage chunk. No API call |
+| `ecosystem-check` | which platform the suggestions target: the default following the provider, the file and environment overrides, that an unknown name targets no platform rather than silently falling back, that each pack's catalogs load and match real hosts, that a pre-pack connector cache still decodes, and that the rendered planner prompt names the right platform and no other. Refuses to run without `DESKMATE_STORAGE_DIR`, since it writes and deletes a cache file. No API call |
 | `config-check` | `providers.json`: parsing, patching a built-in, defining a custom endpoint, the refusals, and that the environment outranks the file. Also the migration promise — no config file behaves exactly as before. Refuses to run without `DESKMATE_STORAGE_DIR`, since it writes and deletes real config and key files |
 | `team enroll <code> <email> <name>` / `team status` / `team disconnect` | hub round trips against a real server |
-| `capabilities` / `capabilities check` | print the bundled capability catalog, or check it against the live one |
-| `connectors [db]` | force a refresh of the Claude connector directory (**network**) |
+| `capabilities [check\|prompt] [--ecosystem=<id>]` | print a pack's bundled capability catalog, diff its dated version strings against the vendor's live page, or print the planner system prompt the pack produces |
+| `connectors [db] [--ecosystem=<id>]` | force a refresh of the target platform's connector directory, and report which of your own apps it matches (**network**, only for a platform that publishes one) |
 
 `DESKMATE_STORAGE_DIR` points these at a scratch directory. Use it — `analyze`
 writes suggestions, and neither it nor the fixture builder belongs anywhere
@@ -408,7 +409,7 @@ the daily-summary switch. Tunables live in `Sources/DeskMateCore/Config.swift`:
 | `idleThresholdSeconds` | 120 |
 | `retentionDays` | 30 |
 | `dismissalWindowDays` | 7 — how long a dismissal suppresses a procedure before it is proposed again |
-| `connectorRefreshDays` | 7 — how long the Claude connector directory cache stays fresh |
+| `connectorRefreshDays` | 7 — how long a fetched connector directory cache stays fresh |
 | `connectorDirectoryURL` | `https://claude.com/connectors` |
 | `sharingEnabled` | `false` — see [Team sharing](#team-sharing) |
 | `hubURL` | `https://deskmate-hub.vercel.app` (unused while sharing is off) |
@@ -573,6 +574,7 @@ to key in an internal hostname.
 ```json
 {
   "selected": "acme-vpc",
+  "ecosystem": "openai",
   "providers": {
     "anthropic": {
       "models": { "reasoning": "claude-opus-5" }
@@ -619,8 +621,51 @@ reads.
 | Variable | Effect |
 |---|---|
 | `DESKMATE_PROVIDER` | Overrides `selected`. Trimmed, case-insensitive. |
+| `DESKMATE_ECOSYSTEM` | Overrides `ecosystem`. `claude`, `openai`, or `neutral`. |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Override that provider's saved key. A custom provider uses `DESKMATE_API_KEY_<ID>`, e.g. `DESKMATE_API_KEY_ACME_VPC`. |
 | `DESKMATE_OPENAI_BASE_URL` | Points the built-in `openai` profile at another endpoint. |
+
+### Which platform the suggestions target
+
+A separate axis from `selected`, and the distinction matters: the provider says
+who does the thinking, the **ecosystem** says which platform a plan recommends
+building on. GPT-5 can reason perfectly well about a procedure whose best
+automation is a Claude Skill, and a self-hosted Qwen has no consumer product
+behind it at all. Tying the two together would make the planner recommend
+whatever happened to be running it.
+
+Three packs ship:
+
+| Pack | Suggestions target | Connector list |
+|---|---|---|
+| `claude` | Claude — connectors, Skills, Claude Code, the API | scraped weekly from `claude.com/connectors` |
+| `openai` | ChatGPT and Codex — apps, workspace agents, Codex CLI and cloud, the Responses API | ships with the app; chatgpt.com refuses automated fetches and publishes no list to walk |
+| `neutral` | no platform at all — scripts, cron, the app's own API | none |
+
+A pack is data, not a code path: a curated `capabilities-<id>.json` and a
+connector source. The capability catalogs are the expensive part and none of the
+judgement in them transfers between platforms — "use a Skill" and "use a
+workspace agent" are not translations of each other, they are different
+recommendations with different costs. Both are hand-curated for the same reason:
+`what` and `doc` are facts off the vendor's docs, while `use_when` and `costs`
+are judgement the docs do not state and no extractor could infer.
+
+`ecosystem` defaults to following the provider — `anthropic` → `claude`,
+`openai` → `openai`, anything else → `neutral` — so an install that never sets it
+behaves exactly as it did. Set it by hand when the two axes genuinely differ,
+which is a team whose model and whose tools come from different places. A name
+that matches no pack targets `neutral` rather than falling back to `claude`,
+because a silent fallback is indistinguishable from the default and the person
+never learns they misspelled it.
+
+Staleness is found differently per pack. Anthropic's tools carry dated type
+strings (`computer_toolset_20260801`), so `DeskMateFixture capabilities check`
+diffs them against the tool reference page and names the entries to re-read.
+OpenAI publishes no such strings, so that command says so rather than reporting
+a clean bill of health it cannot give; that pack is re-verified by re-reading
+`source_index`. `DeskMateFixture capabilities prompt --ecosystem=<id>` prints
+the planner's system prompt exactly as the model receives it, which is where a
+badly worded `use_when` becomes obvious.
 
 `DeskMateFixture provider-verify` resolves the configured provider, prints the
 model and capabilities for each role, checks the credentials, and confirms the

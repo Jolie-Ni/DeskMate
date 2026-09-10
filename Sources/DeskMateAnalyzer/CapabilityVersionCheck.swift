@@ -22,10 +22,12 @@ public struct CapabilityVersionCheck {
     public var session: URLSession
     public init(session: URLSession = .shared) { self.session = session }
 
-    public func run(against catalog: CapabilityCatalog = CapabilityCatalog.bundled()!)
-        async throws -> [Finding]
-    {
-        guard let url = URL(string: catalog.versionCheck) else { return [] }
+    /// Empty means there was nothing to check, which is a real answer rather
+    /// than a clean bill of health: OpenAI's tools carry no dated type strings,
+    /// so that catalog has no `versionedIDs` and this can say nothing about it.
+    public func run(against catalog: CapabilityCatalog) async throws -> [Finding] {
+        guard !catalog.versionedIDs.isEmpty,
+              let url = URL(string: catalog.versionCheck) else { return [] }
         let (data, _) = try await session.data(from: url)
         let html = String(decoding: data, as: UTF8.self)
 

@@ -34,6 +34,7 @@ public struct AutomationPlanner {
         sessions: [Session],
         labels: [String: SessionLabel],
         storage: Storage,
+        ecosystem: Ecosystem = .claude,
         catalog: ConnectorCatalog? = nil,
         capabilities: CapabilityCatalog? = CapabilityCatalog.bundled()
     ) async throws -> AutomationPlan {
@@ -55,8 +56,8 @@ public struct AutomationPlanner {
             ])
         }
 
-        // What Claude can and cannot connect to, for the apps this procedure
-        // actually touches. The negatives carry as much weight as the
+        // What the target platform can and cannot connect to, for the apps this
+        // procedure actually touches. The negatives carry as much weight as the
         // positives: without them the model invents connectors that don't
         // exist, which is the failure that wastes the most of a user's time.
         var integrations: [[String: String]] = []
@@ -66,13 +67,13 @@ public struct AutomationPlanner {
             for app in touched.sorted() {
                 if let hit = matches[app] {
                     integrations.append([
-                        "app": app, "claude_connector": "yes",
+                        "app": app, "connector": "yes",
                         "connector_name": hit.name,
                         "connector_description": hit.description,
                         "connector_url": hit.url,
                     ])
                 } else {
-                    integrations.append(["app": app, "claude_connector": "no"])
+                    integrations.append(["app": app, "connector": "no"])
                 }
             }
         }
@@ -90,7 +91,12 @@ public struct AutomationPlanner {
             "evidence": blocks,
         ]
         if !integrations.isEmpty {
-            payload["claude_connectors"] = integrations
+            payload["connectors"] = integrations
+            // Named in the payload as well as the prompt, because the prompt is
+            // cached across every plan in a run while this travels with the
+            // evidence — and a list of integrations with no platform attached is
+            // the exact ambiguity that gets a plan recommending the wrong one.
+            payload["connector_platform"] = ecosystem.displayName
             if let catalog {
                 let days = Int(catalog.age / 86_400)
                 payload["connector_catalog_checked"] =
@@ -107,7 +113,7 @@ public struct AutomationPlanner {
             // identical for every plan in a run, so it sits inside the cached
             // prefix and costs almost nothing after the first call. Connectors
             // vary per procedure and stay in the user message.
-            system: Self.systemPrompt(capabilities),
+            system: Self.systemPrompt(ecosystem: ecosystem, capabilities: capabilities),
             prompt: json,
             jsonSchema: Self.schema,
             cacheSystemPrompt: true,
@@ -232,35 +238,100 @@ public struct AutomationPlanner {
                      + ["… (screen text elided) …"] + tail).joined(separator: "\n")
     }
 
-    static func systemPrompt(_ capabilities: CapabilityCatalog?) -> String {
-        guard let capabilities else { return basePrompt }
-        let rendered = capabilities.capabilities.map { c -> String in
-            let version = c.version.map { " (\($0))" } ?? ""
-            return """
-            - \(c.name)\(version) — \(c.tier)
-              what: \(c.what)
-              use when: \(c.useWhen)
-              costs: \(c.costs)
+    /// The cached prefix: everything true for every plan in a run.
+    ///
+    /// All the platform-specific material lives here rather than in the payload
+    /// because it is identical across procedures, so it is written once and read
+    /// from cache thereafter. The neutral pack simply has none of it, and what
+    /// remains is a prompt that proposes automations without naming a vendor —
+    /// which is the correct output when nobody can say which vendor is behind
+    /// the model doing the reasoning.
+    public static func systemPrompt(
+        ecosystem: Ecosystem, capabilities: CapabilityCatalog?
+    ) -> String {
+        var prompt = basePrompt
+        let platform = ecosystem.displayName
+
+        if ecosystem.connectors != .none {
+            prompt += """
+
+
+            ## The connector list is fact; your memory of it is not
+
+            When `connectors` is present it comes from \(platform), and
+            `connector_catalog_checked` says when it was last verified. Treat it as
+            ground truth and prefer it over anything you recall.
+
+            - `connector: yes` means one exists. Name it and use it.
+            - `connector: no` means one does NOT exist for that app today. Do not
+              propose one, and do not hedge with "there may be a connector" — say the
+              integration would have to come from the app's own API, a community MCP
+              server, or scripting, and note if none of those exist either.
+            - A connector existing is not the same as the user having enabled it. Say
+              "you would need to enable the X connector", never assume it is live.
             """
-        }.joined(separator: "\n")
+        }
 
-        return basePrompt + """
+        if let capabilities {
+            let rendered = capabilities.capabilities.map { c -> String in
+                let version = c.version.map { " (\($0))" } ?? ""
+                return """
+                - \(c.name)\(version) — \(c.tier)
+                  what: \(c.what)
+                  use when: \(c.useWhen)
+                  costs: \(c.costs)
+                """
+            }.joined(separator: "\n")
+
+            prompt += """
 
 
-        ## What Claude can actually do
+            ## What \(platform) can actually do
 
-        Verified \(capabilities.verifiedAt). Treat this as ground truth about
-        available capabilities and prefer it over anything you recall — the
-        surface changes faster than training data.
+            Verified \(capabilities.verifiedAt). Treat this as ground truth about
+            available capabilities and prefer it over anything you recall — the
+            surface changes faster than training data.
 
-        \(rendered)
+            \(rendered)
 
-        Match the procedure to the capability whose `use when` genuinely fits,
-        and state the `costs` honestly in `risks` rather than glossing them.
-        Note that "Leave it alone" is on this list and is a real answer: a
-        catalog of capabilities makes reaching for one feel obligatory, and it
-        is not.
-        """
+            Match the procedure to the capability whose `use when` genuinely fits,
+            and state the `costs` honestly in `risks` rather than glossing them.
+            Note that "Leave it alone" is on this list and is a real answer: a
+            catalog of capabilities makes reaching for one feel obligatory, and it
+            is not.
+            """
+
+            if let guidance = capabilities.plannerGuidance, !guidance.isEmpty {
+                prompt += """
+
+
+                ## Choosing where this lives
+
+                \(guidance)
+                """
+            }
+        }
+
+        // The counterweight, and it only makes sense once something has been
+        // put in front of the model to resist. Under the neutral pack there is
+        // no list and nothing to resist, so this section would be arguing
+        // against a temptation that was never offered.
+        if capabilities != nil || ecosystem.connectors != .none {
+            prompt += """
+
+
+            ## Reaching for \(platform) is not always the answer
+
+            A list of capabilities has been put in front of you, which makes
+            solutions built on \(platform) easy to reach for. Resist that. A shell
+            script, a Keyboard Maestro macro, a native feature of the app, or leaving
+            the work alone are all valid and often better answers. Recommend one of
+            these capabilities only when it genuinely fits the procedure — not
+            because it is the option in front of you.
+            """
+        }
+
+        return prompt
     }
 
     static let basePrompt: String = """
@@ -300,28 +371,6 @@ public struct AutomationPlanner {
       claiming full automation.
     - `risks`: what this gets wrong, and what the person would have to undo.
       Be specific to this procedure, not generic caution.
-
-    ## The connector list is fact; your memory of it is not
-
-    When `claude_connectors` is present it was fetched from Anthropic's public
-    directory, and `connector_catalog_checked` says when. Treat it as ground
-    truth and prefer it over anything you recall.
-
-    - `claude_connector: yes` means a connector exists. Name it and use it.
-    - `claude_connector: no` means one does NOT exist for that app today. Do not
-      propose one, and do not hedge with "there may be a connector" — say the
-      integration would have to come from the app's own API, a community MCP
-      server, or scripting, and note if none of those exist either.
-    - A connector existing is not the same as the user having enabled it. Say
-      "you would need to enable the X connector", never assume it is live.
-
-    ## Claude is not always the answer
-
-    You are being given a list of Claude connectors, which makes Claude-shaped
-    solutions easy to reach for. Resist that. A shell script, a Keyboard Maestro
-    macro, a native feature of the app, or leaving the work alone are all valid
-    and often better answers. Recommend a connector only when it genuinely fits
-    the procedure — not because it is the option in front of you.
 
     ## Judgement
 

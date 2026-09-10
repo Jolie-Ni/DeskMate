@@ -1,0 +1,91 @@
+{
+  "ecosystem": "openai",
+  "fetchedAt": "2026-09-09T12:00:00Z",
+  "source": "https://help.openai.com/en/articles/11487775-connectors-in-chatgpt",
+  "entries": [
+    {
+      "description": "Search and read files in Box. Available in ChatGPT; not an OpenAI-hosted API connector.",
+      "name": "Box",
+      "slug": "box",
+      "url": "https://help.openai.com/en/articles/11487775-connectors-in-chatgpt"
+    },
+    {
+      "description": "Read and work with Canva designs. Available in ChatGPT for chat search and deep research.",
+      "name": "Canva",
+      "slug": "canva",
+      "url": "https://help.openai.com/en/articles/11487775-connectors-in-chatgpt"
+    },
+    {
+      "description": "Search and read files in Dropbox. Also an OpenAI-hosted API connector (connector_dropbox).",
+      "name": "Dropbox",
+      "slug": "dropbox",
+      "url": "https://developers.openai.com/api/docs/guides/tools-connectors-mcp"
+    },
+    {
+      "description": "Search repositories, code, issues and pull requests. Available in ChatGPT; not an OpenAI-hosted API connector.",
+      "name": "GitHub",
+      "slug": "github",
+      "url": "https://help.openai.com/en/articles/11487775-connectors-in-chatgpt"
+    },
+    {
+      "description": "Read and search mail. Also an OpenAI-hosted API connector (connector_gmail).",
+      "name": "Gmail",
+      "slug": "gmail",
+      "url": "https://developers.openai.com/api/docs/guides/tools-connectors-mcp"
+    },
+    {
+      "description": "Read and search calendar events. Also an OpenAI-hosted API connector (connector_googlecalendar).",
+      "name": "Google Calendar",
+      "slug": "googlecalendar",
+      "url": "https://developers.openai.com/api/docs/guides/tools-connectors-mcp"
+    },
+    {
+      "description": "Search and read Drive files, including Docs, Sheets and Slides. Also an OpenAI-hosted API connector (connector_googledrive).",
+      "name": "Google Drive",
+      "slug": "googledrive",
+      "url": "https://developers.openai.com/api/docs/guides/tools-connectors-mcp"
+    },
+    {
+      "description": "Read and search HubSpot CRM records. Available in ChatGPT; not an OpenAI-hosted API connector.",
+      "name": "HubSpot",
+      "slug": "hubspot",
+      "url": "https://help.openai.com/en/articles/11487775-connectors-in-chatgpt"
+    },
+    {
+      "description": "Read and search Linear issues and projects. Available in ChatGPT, and a place Codex cloud tasks can be delegated from.",
+      "name": "Linear",
+      "slug": "linear",
+      "url": "https://help.openai.com/en/articles/11487775-connectors-in-chatgpt"
+    },
+    {
+      "description": "Read Teams messages and channels. Also an OpenAI-hosted API connector (connector_microsoftteams).",
+      "name": "Microsoft Teams",
+      "slug": "microsoftteams",
+      "url": "https://developers.openai.com/api/docs/guides/tools-connectors-mcp"
+    },
+    {
+      "description": "Search and read Notion pages and databases. Available in ChatGPT for chat search and deep research.",
+      "name": "Notion",
+      "slug": "notion",
+      "url": "https://help.openai.com/en/articles/11487775-connectors-in-chatgpt"
+    },
+    {
+      "description": "Read and search Outlook calendar events. Also an OpenAI-hosted API connector (connector_outlookcalendar).",
+      "name": "Outlook Calendar",
+      "slug": "outlookcalendar",
+      "url": "https://developers.openai.com/api/docs/guides/tools-connectors-mcp"
+    },
+    {
+      "description": "Read and search Outlook mail. Also an OpenAI-hosted API connector (connector_outlookemail).",
+      "name": "Outlook Email",
+      "slug": "outlookemail",
+      "url": "https://developers.openai.com/api/docs/guides/tools-connectors-mcp"
+    },
+    {
+      "description": "Search and read SharePoint sites and documents. Also an OpenAI-hosted API connector (connector_sharepoint).",
+      "name": "SharePoint",
+      "slug": "sharepoint",
+      "url": "https://developers.openai.com/api/docs/guides/tools-connectors-mcp"
+    }
+  ]
+}

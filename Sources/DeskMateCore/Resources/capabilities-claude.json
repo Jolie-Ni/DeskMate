@@ -3,6 +3,7 @@
   "verified_at": "2026-08-27",
   "source_index": "https://platform.claude.com/llms.txt",
   "version_check": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-reference",
+  "planner_guidance": "Claude reaches a procedure through one of three doors, and a plan that does not say which one is not yet a plan: the Claude apps (connectors and Skills, enabled by the person, no code), Claude Code (a terminal on their own machine, with hooks and scheduled runs), or the API (something someone builds and hosts). Pick the door that matches who maintains this afterwards. A person who has never opened a terminal should not be handed an API plan.",
   "capabilities": [
     {
       "id": "computer_use",
@@ -210,7 +211,7 @@
       "tier": "surface",
       "version": null,
       "doc": "https://claude.com/connectors",
-      "what": "Prebuilt MCP integrations enabled from Claude's settings. The live list is cached separately in connectors.json and refreshed weekly.",
+      "what": "Prebuilt MCP integrations enabled from Claude's settings. The live list is cached separately in connectors-claude.json and refreshed weekly.",
       "use_when": "The app already has a connector — check the cached catalog rather than guessing.",
       "costs": "Existing is not the same as enabled. The user must turn it on and grant scopes."
     },

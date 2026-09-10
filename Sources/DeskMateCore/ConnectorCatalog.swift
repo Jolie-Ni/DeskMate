@@ -1,48 +1,99 @@
 import Foundation
 
-/// One entry from Anthropic's public connector directory.
+/// One integration a platform publishes.
 public struct ConnectorEntry: Codable, Equatable, Sendable {
     public let name: String
     public let slug: String
     public let description: String
-    public var url: String { "https://claude.com/connectors/\(slug)" }
+    /// The page a person would open to enable it.
+    ///
+    /// Stored rather than derived from the slug: two platforms publish under
+    /// different roots, and OpenAI's are documented on help pages that do not
+    /// share one path shape at all.
+    public let url: String
 
-    public init(name: String, slug: String, description: String) {
+    public init(name: String, slug: String, description: String, url: String) {
         self.name = name
         self.slug = slug
         self.description = description
+        self.url = url
+    }
+
+    /// A cache written before packs existed has no `url`, and every entry in it
+    /// was Anthropic's. Reconstructing the old value beats discarding a good
+    /// catalog over a field that was implicit rather than absent.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        slug = try c.decode(String.self, forKey: .slug)
+        description = try c.decode(String.self, forKey: .description)
+        url = try c.decodeIfPresent(String.self, forKey: .url)
+            ?? "https://claude.com/connectors/\(slug)"
     }
 }
 
-/// What Claude can currently connect to, cached locally.
+/// What one platform can currently connect to, cached locally.
 ///
-/// Fetched rather than recalled: the directory moves weekly, and a model's
-/// memory of it is stale the moment it ships. Keeping it as a local artefact
-/// also means plans stay deterministic — a fixture pins a catalog and a re-run
-/// compares like with like, which live lookups would destroy.
+/// Fetched rather than recalled where the platform publishes a list: it moves
+/// weekly, and a model's memory of it is stale the moment it ships. Keeping it
+/// as a local artefact also means plans stay deterministic — a fixture pins a
+/// catalog and a re-run compares like with like, which live lookups would
+/// destroy.
 public struct ConnectorCatalog: Codable, Sendable {
     public let fetchedAt: Date
     public let source: String
+    /// Which `Ecosystem` this list describes. Old caches predate packs and were
+    /// all Anthropic's, so a missing value decodes to `claude`.
+    public let ecosystem: String
     public let entries: [ConnectorEntry]
 
-    public init(fetchedAt: Date, source: String, entries: [ConnectorEntry]) {
+    public init(
+        fetchedAt: Date, source: String,
+        ecosystem: String = Ecosystem.claude.id,
+        entries: [ConnectorEntry]
+    ) {
         self.fetchedAt = fetchedAt
         self.source = source
+        self.ecosystem = ecosystem
         self.entries = entries
     }
 
-    public static var fileURL: URL {
-        Config.storageDir.appendingPathComponent("connectors.json")
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fetchedAt = try c.decode(Date.self, forKey: .fetchedAt)
+        source = try c.decode(String.self, forKey: .source)
+        ecosystem = try c.decodeIfPresent(String.self, forKey: .ecosystem)
+            ?? Ecosystem.claude.id
+        entries = try c.decode([ConnectorEntry].self, forKey: .entries)
     }
 
-    public static func load(from url: URL = fileURL) -> ConnectorCatalog? {
+    /// This pack's list, from wherever the pack keeps it.
+    ///
+    /// One call for both sources so the planner never has to know whether a
+    /// list was scraped this week or hand-checked last month. `isStale` is what
+    /// tells them apart, and only the fetched kind can answer it.
+    public static func load(for ecosystem: Ecosystem) -> ConnectorCatalog? {
+        switch ecosystem.connectors {
+        case .directory:
+            return load(from: ecosystem.connectorCacheURL)
+                ?? ecosystem.legacyConnectorCacheURL.flatMap { load(from: $0) }
+        case .bundled(let resource):
+            guard let url = Bundle.module.url(forResource: resource, withExtension: "json")
+            else { return nil }
+            return load(from: url)
+        case .none:
+            return nil
+        }
+    }
+
+    public static func load(from url: URL) -> ConnectorCatalog? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try? decoder.decode(ConnectorCatalog.self, from: data)
     }
 
-    public func save(to url: URL = fileURL) throws {
+    public func save(to url: URL) throws {
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()

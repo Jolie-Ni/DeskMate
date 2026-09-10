@@ -21,6 +21,7 @@ import Foundation
 /// ```json
 /// {
 ///   "selected": "acme-vpc",
+///   "ecosystem": "openai",
 ///   "providers": {
 ///     "anthropic": {
 ///       "models": { "reasoning": "claude-opus-5" }
@@ -40,6 +41,13 @@ import Foundation
 /// }
 /// ```
 ///
+/// `ecosystem` is a separate axis from `selected`: it says which platform the
+/// *suggestions* should target, not who does the thinking. It defaults to
+/// following the provider (`anthropic` -> `claude`, `openai` -> `openai`,
+/// anything else -> `neutral`), and is worth setting by hand exactly when the
+/// two differ — a team running a model in their own VPC whose people all use
+/// ChatGPT wants `"ecosystem": "openai"` against a provider that is neither.
+///
 /// An entry whose id matches a built-in (`anthropic`, `openai`) *patches* it —
 /// name only what you want to change. Any other id defines a new provider,
 /// which must give a `baseURL` and is assumed to speak the OpenAI
@@ -48,6 +56,9 @@ public struct ProviderConfig: Decodable, Equatable {
 
     /// Which provider id to use. Absent means Anthropic, as it always has.
     public var selected: String?
+    /// Which `Ecosystem` the suggestions target. Absent means follow the
+    /// provider, which is what every install did before this field existed.
+    public var ecosystem: String?
     public var providers: [String: Entry]?
 
     public struct Entry: Decodable, Equatable {
@@ -108,8 +119,13 @@ public struct ProviderConfig: Decodable, Equatable {
         }
     }
 
-    public init(selected: String? = nil, providers: [String: Entry]? = nil) {
+    public init(
+        selected: String? = nil,
+        ecosystem: String? = nil,
+        providers: [String: Entry]? = nil
+    ) {
         self.selected = selected
+        self.ecosystem = ecosystem
         self.providers = providers
     }
 

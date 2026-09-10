@@ -1,0 +1,199 @@
+{
+  "note": "Hand-curated from OpenAI's docs on the date below, not scraped. `what` and `doc` are facts read off those pages; `use_when` and `costs` are judgement about when a capability is the right answer for an observed procedure, which the docs do not state and an extractor could not infer. Unlike Anthropic's, OpenAI's tools carry no dated type strings, so `version` is null throughout and CapabilityVersionCheck has nothing to diff here — staleness is found by re-reading `source_index`, not by a fetch. Entries whose `what` begins UNVERIFIED were listed but not read; read the doc before recommending one.",
+  "verified_at": "2026-09-09",
+  "source_index": "https://developers.openai.com/api/docs",
+  "version_check": "https://developers.openai.com/api/docs/guides/tools",
+  "planner_guidance": "OpenAI is three separate surfaces, not one product, and a plan that does not say which one is not yet a plan. ChatGPT is where a non-developer works: apps, agent mode, and workspace agents that a person configures in a browser and schedules without writing code. Codex is a developer's terminal and their repository, plus cloud tasks delegated from GitHub, Linear or Slack. The API is something somebody builds, hosts, and owns afterwards. Choose by who maintains this in six months. A finance analyst gets a workspace agent, not an Agents SDK project, and a developer automating their own release notes gets Codex, not a ChatGPT app. Note also that the eight hosted connectors in the API are a much shorter list than the apps available inside ChatGPT: do not quote one as evidence for the other.",
+  "capabilities": [
+    {
+      "id": "web_search",
+      "name": "Web search",
+      "tier": "primitive",
+      "version": null,
+      "doc": "https://developers.openai.com/api/docs/guides/tools-web-search",
+      "what": "A built-in tool (`web_search`) that lets a response include live web results.",
+      "use_when": "The procedure starts with looking something up that changes — a price, a filing, a competitor's page — before any of the real work happens.",
+      "costs": "Results are whatever the web said this minute. Cite the source in the output or the person cannot check it."
+    },
+    {
+      "id": "file_search",
+      "name": "File search",
+      "tier": "primitive",
+      "version": null,
+      "doc": null,
+      "what": "A built-in tool (`file_search`) that searches uploaded files and returns passages as context.",
+      "use_when": "The procedure means re-reading the same corpus every time: a policy set, past reports, a contract folder. Upload once, query per run.",
+      "costs": "Storage is billed and the index is a copy. Anything uploaded has left the person's machine, which matters for the documents worth automating."
+    },
+    {
+      "id": "computer_use",
+      "name": "Computer use",
+      "tier": "primitive",
+      "version": null,
+      "doc": "https://developers.openai.com/api/docs/guides/tools-computer-use",
+      "what": "A built-in tool (`computer`) that drives a screen through screenshots and mouse and keyboard actions. No longer preview.",
+      "use_when": "The app has no API and nothing scriptable, and the procedure is visual. The last resort that makes an unautomatable app reachable.",
+      "costs": "Slow, expensive per step, brittle against UI changes, and it acts on real accounts. OpenAI's own guidance is an isolated VM, an allow list, and confirmation before anything hard to reverse. Supervised, never unattended."
+    },
+    {
+      "id": "shell",
+      "name": "Shell and code execution",
+      "tier": "primitive",
+      "version": null,
+      "doc": "https://developers.openai.com/api/docs/guides/tools",
+      "what": "UNVERIFIED — listed on the tools overview but its page was not read. A built-in tool (`shell`) that runs commands in a hosted container or a local runtime.",
+      "use_when": "The work is a transformation a script would do: reshape a CSV, rename a batch of files, run a calculation over a sheet. Often the honest answer for procedures that look like AI problems and are not.",
+      "costs": "A container is not the person's machine. Files have to get in and back out, and a local runtime means it is running commands on their laptop."
+    },
+    {
+      "id": "mcp_and_connectors",
+      "name": "MCP tool and hosted connectors",
+      "tier": "primitive",
+      "version": null,
+      "doc": "https://developers.openai.com/api/docs/guides/tools-connectors-mcp",
+      "what": "A built-in tool (`mcp`) reaching either an OpenAI-maintained connector by `connector_id` or any remote MCP server by `server_url`. The hosted connectors are Dropbox, Gmail, Google Calendar, Google Drive, Microsoft Teams, Outlook Calendar, Outlook Email and SharePoint — eight, and that is the whole list for the API.",
+      "use_when": "The procedure reads or writes one of those eight systems and you are building against the API rather than working inside ChatGPT.",
+      "costs": "Each call needs an OAuth token the caller supplies. A remote MCP server is unverified third-party code that sees the conversation; OpenAI's own docs warn a malicious one can exfiltrate data."
+    },
+    {
+      "id": "tool_search",
+      "name": "Tool search",
+      "tier": "primitive",
+      "version": null,
+      "doc": "https://developers.openai.com/api/docs/guides/tools-tool-search",
+      "what": "A built-in tool (`tool_search`) that loads only the relevant tool definitions into context. Requires gpt-5.4 or later.",
+      "use_when": "The automation would otherwise carry dozens of tool definitions in every request. A scaling fix, not a capability.",
+      "costs": "Nothing to add for a plan with a handful of tools. Mentioning it there is noise."
+    },
+    {
+      "id": "function_calling",
+      "name": "Function calling",
+      "tier": "primitive",
+      "version": null,
+      "doc": "https://developers.openai.com/api/docs/guides/function-calling",
+      "what": "The model calls code you wrote and you execute it and return the result.",
+      "use_when": "The system in the procedure has an API but no connector and no MCP server. This is the seam where the plan meets the app's own API.",
+      "costs": "Someone maintains that code and its credentials. This is the point where a plan stops being configuration and becomes software."
+    },
+    {
+      "id": "skills",
+      "name": "Skills",
+      "tier": "primitive",
+      "version": null,
+      "doc": "https://developers.openai.com/api/docs/guides/tools-skills",
+      "what": "A versioned bundle of files with a `SKILL.md` manifest, uploaded and reused across runs. Limits are 50 MB zipped, 500 files, 25 MB uncompressed per version.",
+      "use_when": "The procedure is knowledge-shaped rather than mechanical — a house style, a checklist, an order things are done in. Often right when someone insists their process is just how they do it.",
+      "costs": "Executes nothing by itself. Answers 'how', never 'when'. A bundle is code someone must review before it runs."
+    },
+    {
+      "id": "structured_outputs",
+      "name": "Structured outputs",
+      "tier": "build",
+      "version": null,
+      "doc": "https://developers.openai.com/api/docs/guides/structured-outputs",
+      "what": "Constrains a response to a JSON schema.",
+      "use_when": "The automation's output feeds another system rather than a person. Turns 'parse the prose' into a typed value.",
+      "costs": "A schema that names its own fields invites the model to copy those names into the data. Validate what comes back."
+    },
+    {
+      "id": "prompt_caching",
+      "name": "Prompt caching",
+      "tier": "build",
+      "version": null,
+      "doc": "https://developers.openai.com/api/docs/guides/prompt-caching",
+      "what": "Cached prefixes cost 0.1x uncached input on gpt-5.6 and later, with a first write at 1.25x and a TTL of at least 30 minutes. Implicit on every model; gpt-5.6+ also takes explicit `prompt_cache_breakpoint` markers.",
+      "use_when": "The automation runs the same long preamble many times a day — a policy document, a schema, a long instruction set.",
+      "costs": "The whole rendered prefix has to match. Changing the model, a tool definition, the output schema or the reasoning effort silently ends the discount."
+    },
+    {
+      "id": "batch",
+      "name": "Batch API",
+      "tier": "build",
+      "version": null,
+      "doc": "https://developers.openai.com/api/docs/guides/batch",
+      "what": "Asynchronous processing at half price, inside 24 hours, from a separate rate-limit pool. Up to 50,000 requests and 200 MB per batch.",
+      "use_when": "The procedure runs over a pile of items and nobody is waiting — an overnight classification, a backlog to summarise, a monthly re-scoring.",
+      "costs": "Nothing comes back for up to a day, so this is wrong for anything a person watches. Failures arrive as a file to reconcile, not an error to catch."
+    },
+    {
+      "id": "agents_sdk",
+      "name": "Agents SDK",
+      "tier": "build",
+      "version": null,
+      "doc": "https://developers.openai.com/api/docs/guides/agents",
+      "what": "The code-first way to build multi-step agents against the API. OpenAI's recommended path for workflows that should live as code.",
+      "use_when": "The automation has real branching, several tools, and someone who will own it as software. The step past a single call with tools attached.",
+      "costs": "A codebase, a deploy, and a person who maintains it. Do not propose this for someone whose procedure is fifteen minutes a week."
+    },
+    {
+      "id": "codex_cli",
+      "name": "Codex CLI",
+      "tier": "surface",
+      "version": null,
+      "doc": "https://developers.openai.com/codex/cli",
+      "what": "A terminal agent that inspects a repository, edits files, and runs commands on the person's own machine. `codex exec` runs it non-interactively for pipelines; `codex mcp` attaches MCP servers; `/permissions` bounds what a run may do without asking.",
+      "use_when": "The procedure is on their machine and touches files, a repo, or a command line. The strongest answer for a developer's repeated work, and it needs no service to be built or hosted.",
+      "costs": "A terminal, and a person comfortable in one. It runs commands locally, so the approval boundary is the entire safety story."
+    },
+    {
+      "id": "codex_cloud",
+      "name": "Codex cloud",
+      "tier": "surface",
+      "version": null,
+      "doc": "https://developers.openai.com/codex/cloud",
+      "what": "Tasks run in isolated cloud environments with dependencies configured up front. Work is delegated from the web, GitHub, GitLab, Linear or Slack, and comes back as a diff or a pull request.",
+      "use_when": "The trigger is already an event in one of those systems — an issue filed, a pull request opened, a message in a channel — and the procedure is a code change.",
+      "costs": "The environment has to be set up and kept working. Not documented as schedulable: it is delegated or triggered, not cron."
+    },
+    {
+      "id": "workspace_agents",
+      "name": "ChatGPT workspace agents",
+      "tier": "surface",
+      "version": null,
+      "doc": "https://help.openai.com/en/articles/20001143-chatgpt-workspace-agents-for-enterprise-and-business",
+      "what": "An agent built inside ChatGPT that picks its model and reasoning effort, connects to apps and tools, is shared with a workspace, used from Slack, run on a schedule, or triggered by API. Enterprise and Business.",
+      "use_when": "The strongest fit for most observed office procedures: it is scheduled, it reaches the apps, it is shared with the team, and nobody writes code. Reach for this before anything API-shaped when the person is not a developer.",
+      "costs": "Enterprise or Business, and an admin who installs the apps it needs. Behaviour lives in a prompt someone edits in a browser, so it is not versioned the way a repo is."
+    },
+    {
+      "id": "chatgpt_apps",
+      "name": "Apps and connectors in ChatGPT",
+      "tier": "surface",
+      "version": null,
+      "doc": "https://help.openai.com/en/articles/11487775-connectors-in-chatgpt",
+      "what": "Integrations enabled from ChatGPT that let it read and act in outside systems, discovered through the plugin directory. The list is far longer than the API's eight connectors and is cached separately in connectors-openai.json.",
+      "use_when": "The person already works in ChatGPT and the procedure touches a system on that list. Check the cached catalog rather than guessing.",
+      "costs": "Existing is not enabled. On Business and Enterprise an admin installs it, and the person still grants scopes. Availability varies by plan."
+    },
+    {
+      "id": "chatgpt_agent_tasks",
+      "name": "ChatGPT agent mode and recurring tasks",
+      "tier": "surface",
+      "version": null,
+      "doc": "https://help.openai.com/en/articles/11752874-chatgpt-agent",
+      "what": "Agent mode does multi-step work in a browser inside ChatGPT, and a finished task can be set to repeat daily, weekly or monthly. Recurring ones are managed at chatgpt.com/schedules.",
+      "use_when": "The procedure is a browsing errand on a rhythm — a weekly check, a monthly pull — done by the person alone rather than a team.",
+      "costs": "Per-person, not shared, and driven by a prompt rather than a spec. Fine for a personal routine, wrong as team infrastructure."
+    },
+    {
+      "id": "agent_builder",
+      "name": "Agent Builder",
+      "tier": "surface",
+      "version": null,
+      "doc": "https://openai.com/index/introducing-agentkit/",
+      "what": "The visual agent canvas shipped with AgentKit. Being withdrawn: unavailable on the platform from 30 November 2026, along with Evals.",
+      "use_when": "Never. It is here so a plan does not recommend it — it is the obvious-looking answer and it is going away. Propose the Agents SDK for code, or a workspace agent for no-code.",
+      "costs": "Anything built on it has to be moved before the cutoff."
+    },
+    {
+      "id": "no_automation",
+      "name": "Leave it alone",
+      "tier": "judgement",
+      "version": null,
+      "doc": null,
+      "what": "Not every repeated procedure should be automated.",
+      "use_when": "The work is mostly judgement — choosing wording, deciding what matters, reading a room. Or it runs rarely enough that the build cost exceeds the saving. A template, a snippet, or a keyboard shortcut is often the honest recommendation.",
+      "costs": "None. This is the answer that gets under-recommended because it is the one nobody is selling."
+    }
+  ]
+}

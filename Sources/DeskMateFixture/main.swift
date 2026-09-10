@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import DeskMateAnalyzer
 import DeskMateCore
 
 // Builds a DeskMate database from AgentNet trajectories.
@@ -120,17 +121,46 @@ if args.count == 3, args[1] == "verify" {
     try Verify.run(dbPath: args[2])
     exit(0)
 }
+// Both catalogs are per-ecosystem, so both commands take one. Defaulting to
+// whatever the machine is configured for rather than to Claude: someone who has
+// switched their install is asking about the pack they switched to.
+func ecosystemArgument(_ rest: [String]) -> Ecosystem {
+    for arg in rest where arg.hasPrefix("--ecosystem=") {
+        let id = String(arg.dropFirst("--ecosystem=".count))
+        guard let pack = Ecosystem.builtIn(id: id) else {
+            FileHandle.standardError.write(
+                "unknown ecosystem \"\(id)\" — try \(Ecosystem.builtIn.map(\.id).joined(separator: ", "))\n"
+                    .data(using: .utf8)!)
+            exit(2)
+        }
+        return pack
+    }
+    return EcosystemFactory.resolve().ecosystem
+}
+
 if args.count >= 2, args[1] == "capabilities" {
-    if args.count > 2, args[2] == "check" {
-        runBlockingOrExit { try await CapabilitiesReport.versionCheck() }
+    let rest = Array(args.dropFirst(2))
+    let pack = ecosystemArgument(rest)
+    if rest.contains("check") {
+        runBlockingOrExit { try await CapabilitiesReport.versionCheck(pack) }
+    } else if rest.contains("prompt") {
+        CapabilitiesReport.prompt(pack)
     } else {
-        CapabilitiesReport.run()
+        CapabilitiesReport.run(pack)
     }
     exit(0)
 }
 if args.count >= 2, args[1] == "connectors" {
-    let db = args.count > 2 ? args[2] : nil
-    runBlockingOrExit { try await Connectors.refresh(force: true, dbPath: db) }
+    let rest = Array(args.dropFirst(2))
+    let db = rest.first { !$0.hasPrefix("--") }
+    let pack = ecosystemArgument(rest)
+    runBlockingOrExit {
+        try await Connectors.refresh(force: true, dbPath: db, ecosystem: pack)
+    }
+    exit(0)
+}
+if args.count == 2, args[1] == "ecosystem-check" {
+    EcosystemCheck.run()
     exit(0)
 }
 if args.count >= 3, args[1] == "share-preview" {
