@@ -44,7 +44,7 @@ Builds are signed with a Developer ID certificate and notarized by Apple, with t
 
 On first launch DeskMate asks for your Anthropic API key and checks it against the API before saving. You can skip it — capture never touches the network and works with no key at all — and add one later in Settings. Anthropic is only the default; see [Choosing your model](#choosing-your-model) to point it somewhere else.
 
-Then press **Start**, top right. That spawns the capture daemon; **Stop** ends it. Closing the window does not stop recording — stopping is meant to be a deliberate act.
+Then press **Start**, top right. That spawns the capture daemon; **Stop** ends it. The same two controls sit under the eye in the menu bar, so you can start and stop from whatever app you are in: the eye is filled while the recorder is capturing, outlined while it is running but you are idle, and struck through when nothing is recording. Closing the window leaves DeskMate in the menu bar and does not stop recording — stopping is meant to be a deliberate act.
 
 Requires **macOS 14 or later**. macOS prompts for Screen Recording on first capture, and for Accessibility if you want window titles. Grant them in System Settings → Privacy & Security, then Stop and Start again. The recorder asks under its own name, `DeskMateDaemon`, because it is a separate process from the window you are looking at.
 
