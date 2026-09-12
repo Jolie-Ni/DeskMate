@@ -94,6 +94,36 @@ enum SummaryJobCheck {
         check((try? SummaryJob.remove(label: label, plistURL: plistURL)) != nil,
               "removing twice is not an error")
 
+        // The launch-time cleanup. An agent installed by a build that had the
+        // feature on outlives that build, so a gated copy has to be able to
+        // take it away — exercised here against a real loaded agent, because
+        // the failure mode is launchd waking a process every night forever.
+        print("cleanup when the feature is off")
+        do {
+            try SummaryJob.install(binary: binary, label: label, plistURL: plistURL)
+            check(SummaryJob.isLoaded(label: label), "an inherited agent is loaded")
+
+            let removed = try SummaryJob.removeIfUnavailable(
+                label: label, plistURL: plistURL)
+            check(removed == !Config.summaryEnabled,
+                  Config.summaryEnabled
+                      ? "left alone while summaryEnabled is true"
+                      : "removed while summaryEnabled is false")
+            check(FileManager.default.fileExists(atPath: plistURL.path)
+                      == Config.summaryEnabled,
+                  Config.summaryEnabled ? "plist kept" : "plist deleted")
+            check(SummaryJob.isLoaded(label: label) == Config.summaryEnabled,
+                  Config.summaryEnabled ? "still loaded" : "launchd unloaded it")
+
+            // Every launch calls this, so the second call has to be a no-op
+            // rather than an error on a machine that was already cleaned up.
+            check((try? SummaryJob.removeIfUnavailable(
+                      label: label, plistURL: plistURL)) == false,
+                  "a second launch finds nothing to do")
+        } catch {
+            check(false, "cleanup threw: \(error.localizedDescription)")
+        }
+
         print("the real job is untouched")
         check(SummaryJob.plistURL.lastPathComponent == "\(SummaryJob.label).plist",
               "real plist path is \(SummaryJob.plistURL.path)")

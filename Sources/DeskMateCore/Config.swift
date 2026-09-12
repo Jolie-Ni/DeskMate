@@ -15,6 +15,29 @@ public enum Config {
     /// to `deskmate-hub` — see `hubURL` below, which does not resolve today.
     public static let sharingEnabled = false
 
+    /// The nightly activity summary — its Settings card, its launchd agent, and
+    /// the `DeskMateSummary` binary itself — is off.
+    ///
+    /// It is the only thing in DeskMate that sends data without a button being
+    /// pressed: at 23:59 a sample of the day's on-screen text goes to the
+    /// provider, and the file that comes back names real projects, documents and
+    /// people. That is defensible for an individual who switched it on, and not
+    /// something to leave reachable in an enterprise build where the person
+    /// clicking is not the person who accepted the risk.
+    ///
+    /// Note what this is *not*: `AppSettings.dailySummaryEnabled` is a
+    /// preference, defaulting to true, and it answers "did this person turn the
+    /// feature off?". This answers "does this build have the feature at all?"
+    /// and it wins. A build with this false must never write a summary, whatever
+    /// the preferences file or the command line says — so the summary binary
+    /// checks it before anything else, ahead of `--force`.
+    ///
+    /// Behind a flag rather than deleted, for the same reason sharing is: the
+    /// narrator, the activity roll-up and the launchd installer stay compiled
+    /// and exercised by `DeskMateFixture summaryjob-check`, so re-enabling is
+    /// one line.
+    public static let summaryEnabled = false
+
     public static let captureIntervalSeconds: TimeInterval = 30
     public static let idleThresholdSeconds: TimeInterval = 120
     public static let retentionDays: Int = 30

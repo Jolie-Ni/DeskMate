@@ -42,7 +42,11 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: theme.space(3)) {
                 apiKeyCard
-                dailySummary
+                // Hidden, not disabled: a greyed-out switch invites someone to
+                // ask their admin to enable it, and there is nothing to enable.
+                if Config.summaryEnabled {
+                    dailySummary
+                }
                 if let saveError {
                     DSBanner(title: "Couldn't save that", message: saveError, tone: .critical)
                 }
@@ -78,8 +82,11 @@ struct SettingsView: View {
                     .font(theme.headline)
                     .foregroundStyle(theme.ink)
 
-                Text("Used by Analyze and by the nightly summary. Capture never "
-                     + "needs it — recording works with no key at all.")
+                Text(Config.summaryEnabled
+                     ? "Used by Analyze and by the nightly summary. Capture never "
+                       + "needs it — recording works with no key at all."
+                     : "Used by Analyze. Capture never needs it — recording works "
+                       + "with no key at all.")
                     .font(theme.body)
                     .foregroundStyle(theme.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)

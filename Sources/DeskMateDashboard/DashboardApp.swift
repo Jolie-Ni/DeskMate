@@ -16,6 +16,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // chrome (scrollbars, menus, focus rings) around a light glaze. Pin the
         // whole app to Aqua until a dark DSTheme exists.
         NSApp.appearance = NSAppearance(named: .aqua)
+
+        // Off the main thread: removing an agent shells out to launchctl, and
+        // startup housekeeping should not hold up the first window. Failure is
+        // logged and swallowed — the summary binary refuses to run either way,
+        // so the worst case is an agent that wakes and exits, and a banner about
+        // a feature this build does not have would be nonsense to the reader.
+        Task.detached(priority: .utility) {
+            do {
+                if try SummaryJob.removeIfUnavailable() {
+                    print("[deskmate] removed the nightly summary agent — "
+                          + "not available in this build")
+                }
+            } catch {
+                FileHandle.standardError.write(
+                    "[deskmate] couldn't remove the nightly summary agent: \(error)\n"
+                        .data(using: .utf8)!)
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

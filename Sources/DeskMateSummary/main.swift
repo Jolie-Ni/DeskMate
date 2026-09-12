@@ -11,6 +11,17 @@ import DeskMateCore
 
 let args = CommandLine.arguments
 
+// The build-level gate, checked before anything else and deliberately ahead of
+// `--force`. A stale launchd plist outlives the build that installed it, so an
+// enterprise copy can inherit a job scheduled by an earlier one — and with the
+// Settings card hidden there would be no way to switch it off from the app.
+// Refusing here means the worst case is a job that fires and exits, rather than
+// a summary nobody asked for.
+if !Config.summaryEnabled {
+    print("daily summary is not available in this build — nothing written")
+    exit(0)
+}
+
 func value(_ flag: String) -> String? {
     args.firstIndex(of: flag).map { $0 + 1 }.flatMap { $0 < args.count ? args[$0] : nil }
 }

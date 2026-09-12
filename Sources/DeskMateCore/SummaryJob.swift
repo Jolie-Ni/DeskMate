@@ -21,6 +21,7 @@ public enum SummaryJob {
 
     public enum JobError: LocalizedError {
         case binaryNotFound
+        case notAvailable
         case launchctl(String)
 
         public var errorDescription: String? {
@@ -28,6 +29,8 @@ public enum SummaryJob {
             case .binaryNotFound:
                 return "Couldn't find \(executableName) next to the app. "
                      + "If you built from source, run `swift build -c release` first."
+            case .notAvailable:
+                return "The daily summary is not available in this build."
             case .launchctl(let message):
                 return "launchctl refused the job: \(message)"
             }
@@ -95,12 +98,44 @@ public enum SummaryJob {
     // MARK: - Install / remove
 
     public static func install() throws {
+        // Gated here as well as in the UI, because this is the only path that
+        // schedules anything. `remove()` is deliberately left open: a build with
+        // the feature off still has to be able to clean up a plist installed by
+        // one that had it on.
+        guard Config.summaryEnabled else { throw JobError.notAvailable }
         guard let binary = executableURL() else { throw JobError.binaryNotFound }
         try install(binary: binary, label: label, plistURL: plistURL)
     }
 
     public static func remove() throws {
         try remove(label: label, plistURL: plistURL)
+    }
+
+    /// Deletes the nightly agent when this build has the feature switched off.
+    ///
+    /// A plist outlives the build that wrote it, so a copy with
+    /// `Config.summaryEnabled` false can inherit an agent scheduled by one that
+    /// had it true. `DeskMateSummary` already refuses to write anything, but
+    /// leaving the agent loaded means launchd wakes a process every night for a
+    /// feature that no longer exists — and the Settings card that would remove
+    /// it is hidden. So the app cleans up after itself at launch instead.
+    ///
+    /// Safe to call on every launch and cheap when there is nothing to do:
+    /// the installed check is a `fileExists`, not a subprocess. Returns whether
+    /// an agent was actually removed, so a caller can say so in the log.
+    ///
+    /// Parameterised for the same reason `remove(label:plistURL:)` is — so the
+    /// check harness can prove this removes a real loaded agent without going
+    /// near the one the person running it has installed.
+    @discardableResult
+    public static func removeIfUnavailable(
+        label: String = label, plistURL: URL = plistURL
+    ) throws -> Bool {
+        guard !Config.summaryEnabled,
+              FileManager.default.fileExists(atPath: plistURL.path)
+        else { return false }
+        try remove(label: label, plistURL: plistURL)
+        return true
     }
 
     /// The label and destination are parameters, and public, so that
