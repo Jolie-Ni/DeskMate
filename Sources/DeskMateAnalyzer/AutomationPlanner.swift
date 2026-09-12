@@ -294,6 +294,8 @@ public struct AutomationPlanner {
 
             \(rendered)
 
+            Before you propose an automation, reflect on whether this is truly worth doing. Whether the existing workflow is already good enough, and whether the automation would be more trouble than it is worth.
+
             Match the procedure to the capability whose `use when` genuinely fits,
             and state the `costs` honestly in `risks` rather than glossing them.
             Note that "Leave it alone" is on this list and is a real answer: a
