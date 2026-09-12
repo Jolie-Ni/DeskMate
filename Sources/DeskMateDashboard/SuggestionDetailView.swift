@@ -11,12 +11,34 @@ struct SuggestionDetailView: View {
     @Environment(\.dsTheme) private var theme
     @EnvironmentObject var sharing: SharingModel
 
+    /// Which list this was opened from.
+    ///
+    /// The reading below is identical either way — the same procedure, the same
+    /// plan — because a workflow you kept is the suggestion you kept, and it
+    /// would be strange for the page to describe the work differently once you
+    /// agreed with it. Only the toolbar differs: a suggestion is a proposal to
+    /// accept or throw away, while a saved workflow has already been decided
+    /// and keeps its share and delete controls on the row in the list.
+    enum Origin {
+        case suggestion
+        case savedWorkflow
+    }
+
     let suggestion: WorkflowSuggestion
+    var origin: Origin = .suggestion
     let onBack: () -> Void
-    let onDismiss: () -> Void
-    let onSave: () -> Void
+    /// Unused from `.savedWorkflow`, where the decision has already been made.
+    var onDismiss: () -> Void = {}
+    var onSave: () -> Void = {}
     /// Save, then open the share sheet. Only offered when this Mac is on a team.
-    let onSaveAndShare: () -> Void
+    var onSaveAndShare: () -> Void = {}
+
+    private var backTitle: String {
+        switch origin {
+        case .suggestion:    return "All procedures"
+        case .savedWorkflow: return "All workflows"
+        }
+    }
 
     private var plan: AutomationPlan? { suggestion.automation }
 
@@ -27,29 +49,31 @@ struct SuggestionDetailView: View {
                     HStack(spacing: theme.space(0.5)) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 10, weight: .bold))
-                        Text("All procedures")
+                        Text(backTitle)
                     }
                 }
                 .buttonStyle(.ds(.quiet, size: .small))
 
                 Spacer(minLength: 0)
 
-                Button("Dismiss", action: onDismiss)
-                    .buttonStyle(.ds(.quiet, size: .small, tone: .critical))
-                    .help("Throw this procedure away. It won't be suggested again.")
-                // Two actions rather than one word doing both jobs: keeping a
-                // procedure for yourself and telling your employer about it are
-                // different decisions, and "save" already meant the first.
-                if sharing.isEnrolled {
-                    Button("Save", action: onSave)
-                        .buttonStyle(.ds(.soft, size: .small))
-                        .help("Keeps it in Workflows. Nothing is shared.")
-                    Button("Save & share with team", action: onSaveAndShare)
-                        .buttonStyle(.ds(.primary, size: .small))
-                        .help("Saves it, then shows you exactly what would be shared.")
-                } else {
-                    Button("Save as workflow", action: onSave)
-                        .buttonStyle(.ds(.primary, size: .small))
+                if origin == .suggestion {
+                    Button("Dismiss", action: onDismiss)
+                        .buttonStyle(.ds(.quiet, size: .small, tone: .critical))
+                        .help("Throw this procedure away. It won't be suggested again.")
+                    // Two actions rather than one word doing both jobs: keeping a
+                    // procedure for yourself and telling your employer about it are
+                    // different decisions, and "save" already meant the first.
+                    if sharing.isEnrolled {
+                        Button("Save", action: onSave)
+                            .buttonStyle(.ds(.soft, size: .small))
+                            .help("Keeps it in Workflows. Nothing is shared.")
+                        Button("Save & share with team", action: onSaveAndShare)
+                            .buttonStyle(.ds(.primary, size: .small))
+                            .help("Saves it, then shows you exactly what would be shared.")
+                    } else {
+                        Button("Save as workflow", action: onSave)
+                            .buttonStyle(.ds(.primary, size: .small))
+                    }
                 }
             }
             .padding(.horizontal, theme.space(3))

@@ -108,6 +108,9 @@ final class DashboardModel: ObservableObject {
     /// Set when "Save & share" hands off to the Workflows tab.
     @Published var pendingShareWorkflowID: Int64?
     @Published var workflows: [Workflow] = []
+    /// Which saved workflow's detail is open, if any. Mirrors
+    /// `selectedSuggestionID` — the detail replaces the list in both tabs.
+    @Published var openedWorkflow: OpenWorkflow?
     @Published var loadError: String?
     @Published var analysisState: AnalysisState = .idle
     @Published var lastAnalysis: LastAnalysis? = LastAnalysis.load()
@@ -165,6 +168,40 @@ final class DashboardModel: ObservableObject {
 
     func selectSuggestion(_ suggestion: WorkflowSuggestion?) {
         selectedSuggestionID = suggestion?.id
+    }
+
+    // MARK: - Saved workflow detail
+
+    /// A saved workflow paired with the suggestion it was kept from.
+    ///
+    /// The two are separate rows: `Workflow` holds the name, the share state and
+    /// the step locations, while the procedure and the automation plan stay on
+    /// the suggestion. So opening a workflow's detail means resolving the join,
+    /// and `suggestion` is nil when that fails — an older workflow saved before
+    /// `sourceSuggestionID` existed, or one whose source row was removed.
+    struct OpenWorkflow: Identifiable {
+        let workflow: Workflow
+        let suggestion: WorkflowSuggestion?
+        var id: Int64 { workflow.id ?? -1 }
+    }
+
+    /// Resolved once, at selection, rather than per-render: the plan lives on
+    /// another row and reading it is a query, which a computed property in a
+    /// view body would repeat on every layout pass.
+    ///
+    /// Saving a suggestion moves it to `accepted` rather than deleting it, and
+    /// re-analysis only clears `pending` rows, so the source normally survives
+    /// for as long as the workflow does.
+    func openWorkflow(_ workflow: Workflow?) {
+        guard let workflow else {
+            openedWorkflow = nil
+            return
+        }
+        var source: WorkflowSuggestion?
+        if let storage, let sourceID = workflow.sourceSuggestionID {
+            source = try? storage.suggestion(id: sourceID)
+        }
+        openedWorkflow = OpenWorkflow(workflow: workflow, suggestion: source)
     }
 
     func dismissError() {
@@ -244,6 +281,13 @@ final class DashboardModel: ObservableObject {
             sessions = try Self.todaysSessions(storage: storage)
             suggestions = try stats.suggestions()
             workflows = try stats.workflows()
+            // A workflow can go away under an open detail. `selectedSuggestion`
+            // resolves through the array each time and closes itself; this one
+            // holds a resolved pair, so it has to be checked.
+            if let open = openedWorkflow,
+               !workflows.contains(where: { $0.id == open.workflow.id }) {
+                openedWorkflow = nil
+            }
             loadError = nil
         } catch {
             loadError = "Query failed: \(error.localizedDescription)"

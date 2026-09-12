@@ -19,7 +19,12 @@ struct WorkflowsView: View {
     @State private var confirmingID: Int64?
 
     var body: some View {
-        if model.workflows.isEmpty {
+        // Detail replaces the list, exactly as it does on Suggestions: it is the
+        // same long-form reading, and a sheet would float a second scroll view
+        // over the first.
+        if let open = model.openedWorkflow {
+            detail(for: open)
+        } else if model.workflows.isEmpty {
             DSEmptyState(
                 systemImage: "square.stack.3d.up",
                 title: "No saved workflows",
@@ -35,10 +40,27 @@ struct WorkflowsView: View {
                             title: workflow.name,
                             subtitle: "Saved \(workflow.createdAt.formatted(.relative(presentation: .named)))",
                             systemImage: workflow.enabled ? "checkmark.seal.fill" : "circle.dashed",
-                            iconTone: workflow.enabled ? .positive : .neutral
+                            iconTone: workflow.enabled ? .positive : .neutral,
+                            showsChevron: confirmingID != workflow.id
                         ) {
                             trailing(for: workflow)
                         }
+                        // A tap gesture rather than `DSRow(action:)`, for the
+                        // reason SOPCard spells out: a Button nested inside a
+                        // Button loses the hit test to its ancestor, which would
+                        // take the share and delete controls in the trailing edge
+                        // with it. A real Button does beat an ancestor's tap
+                        // gesture, so this way round each control keeps its clicks.
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            // An armed row is asking a question. Answer it first.
+                            guard confirmingID != workflow.id else { return }
+                            model.openWorkflow(workflow)
+                        }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint("Opens the procedure and automation plan")
+                        .accessibilityAction(.default) { model.openWorkflow(workflow) }
                     }
                 }
                 .padding(.horizontal, theme.space(3))
@@ -57,6 +79,50 @@ struct WorkflowsView: View {
                 ShareSheet(workflow: target.workflow) { sharingTarget = nil; model.reload() }
                     .environmentObject(sharing)
                     .dsTheme(.default)
+            }
+        }
+    }
+
+    /// The same page the Suggestions tab shows, with the same procedure and the
+    /// same plan — a workflow you kept is a suggestion you agreed with, and it
+    /// would be odd for the description of the work to change once you did.
+    @ViewBuilder
+    private func detail(for open: DashboardModel.OpenWorkflow) -> some View {
+        if let suggestion = open.suggestion {
+            SuggestionDetailView(
+                suggestion: suggestion,
+                origin: .savedWorkflow,
+                onBack: { model.openWorkflow(nil) }
+            )
+        } else {
+            // The join can come up empty, so say so rather than showing an
+            // empty page. Both causes are real and the UI can't tell them
+            // apart, so it names both instead of guessing.
+            VStack(alignment: .leading, spacing: theme.space(2)) {
+                DSToolbarRow {
+                    Button(action: { model.openWorkflow(nil) }) {
+                        HStack(spacing: theme.space(0.5)) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("All workflows")
+                        }
+                    }
+                    .buttonStyle(.ds(.quiet, size: .small))
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, theme.space(3))
+                .frame(maxWidth: theme.contentMaxWidth, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+                DSEmptyState(
+                    systemImage: "doc.questionmark",
+                    title: "No procedure stored with this one",
+                    message: "“\(open.workflow.name)” isn't linked to a recorded procedure. "
+                           + "It was either kept before DeskMate stored the two together, or "
+                           + "the analysis behind it has since been removed. Running a new "
+                           + "analysis will describe the work again."
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
